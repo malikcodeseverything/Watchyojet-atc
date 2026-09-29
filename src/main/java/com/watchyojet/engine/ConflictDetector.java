@@ -40,7 +40,7 @@ public class ConflictDetector {
                     };
 
                     conflicts.add(new Conflict(a1, a2, severity, tCPA, cpaDistance,
-                            zone.label(), zone.lateralNm(), zone.verticalFeet()));
+                            zone.label(), zone.lateralNm(), zone.verticalFeet(), altitudeDiff));
 
                     if (logConflicts) {
                         System.out.println("\n[CONFLICT DETECTED]");
