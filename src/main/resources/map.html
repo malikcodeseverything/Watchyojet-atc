@@ -5,9 +5,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>WatchyoJet — Autonomous ATC</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 <style>
   :root {
     --bg: #f4f1ec;
@@ -39,7 +36,7 @@
     overflow: hidden;
     background: var(--bg);
     color: var(--ink);
-    font-family: 'Outfit', sans-serif;
+    font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
     font-feature-settings: "ss01", "cv11";
   }
@@ -69,10 +66,10 @@
   }
 
   .logo {
-    font-family: 'Fraunces', serif;
+    font-family: inherit;
     font-weight: 700;
-    font-size: 22px;
-    letter-spacing: -0.02em;
+    font-size: 17px;
+    letter-spacing: 0.01em;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -85,7 +82,7 @@
     transform: rotate(45deg);
     display: inline-block;
   }
-  .logo span { color: var(--accent); font-style: italic; }
+  .logo span { color: var(--accent); font-style: normal; }
 
   .breadcrumb {
     display: flex;
@@ -538,17 +535,81 @@
     border-radius: 6px;
     border-left: 3px solid var(--accent);
   }
+  /* Operational theme: restrained density, clear hierarchy, no decorative motion. */
+  :root {
+    --bg: #0b1118;
+    --bg-panel: #101923;
+    --bg-soft: #15212d;
+    --ink: #e6edf3;
+    --ink-soft: #9caaba;
+    --ink-faint: #687789;
+    --line: #263545;
+    --line-soft: #1d2a37;
+    --accent: #58a6ff;
+    --accent-deep: #79b8ff;
+    --ok: #3fb950;
+    --warn: #d29922;
+    --danger: #f85149;
+    --sky: #0c1822;
+    --land: #172631;
+    --land-hi: #223746;
+    --water: #0c1822;
+    --runway: #d7e0e8;
+    --shadow-lg: none;
+    --shadow-sm: none;
+  }
+  body {
+    grid-template-rows: 56px 1fr 36px;
+    grid-template-columns: 280px minmax(520px, 1fr) 320px;
+  }
+  header { padding: 0 18px; gap: 18px; }
+  .logo::before { width: 8px; height: 8px; border-radius: 50%; transform: none; }
+  .sidebar, .right-panel { padding: 16px; }
+  .panel-section { margin-bottom: 22px; }
+  .panel-title { font-size: 10px; letter-spacing: .14em; }
+  .stat-card, .item, .search-input, .hint, .legend-pill, .aircraft-card,
+  .conflict-item, .map-overlay-bottom, .map-zoom-controls, .back-btn { border-radius: 3px; }
+  .stat-card { background: transparent; border: 1px solid var(--line-soft); padding: 10px; }
+  .stat-card .value, .telem .value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .stat-card .value { font-size: 20px; }
+  .legend-pill { background: rgba(16,25,35,.88); border-color: var(--line); }
+  .aircraft-card { background: transparent; }
+  .conflict-item { animation: none; background: rgba(248,81,73,.07); }
+  .resolved-item { display: none; }
+  .map-zoom-controls button, .search-input { font-family: inherit; }
+  footer { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #dataStatusBadge {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--line);
+    color: var(--ink-soft);
+    padding: 5px 8px;
+    border-radius: 3px;
+    font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: .04em;
+  }
+  .scope-note {
+    color: var(--ink-soft);
+    border: 1px solid var(--line-soft);
+    padding: 10px;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  @media (max-width: 1150px) {
+    body { grid-template-columns: 230px minmax(440px, 1fr) 280px; }
+  }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">Watchyo<span>Jet</span></div>
+  <div class="logo">Watchyo<span>Jet</span> Traffic Monitor</div>
   <button class="back-btn" id="backBtn" disabled>← Back</button>
   <nav class="breadcrumb" id="breadcrumb">
     <div class="crumb active" data-level="0">Globe</div>
   </nav>
   <div class="header-right">
+    <div id="dataStatusBadge">CONNECTING</div>
     <div id="clockUTC">00:00:00 UTC</div>
   </div>
 </header>
@@ -560,7 +621,7 @@
     <div class="item-list" id="itemList"></div>
   </div>
   <div class="panel-section">
-    <div class="panel-title">SYSTEM</div>
+    <div class="panel-title">TRAFFIC SUMMARY</div>
     <div class="stat-grid">
       <div class="stat-card accent">
         <div class="label">Tracked</div>
@@ -584,6 +645,7 @@
       </div>
     </div>
     <div class="hint" id="viewHint">Click a country on the globe to drill down.</div>
+    <div class="scope-note" style="margin-top:10px">U.S. advisory model: 3 NM terminal / 5 NM en route, 1,000 ft vertical. Alert horizon: 2 / 5 min. Educational simulation only.</div>
   </div>
 </aside>
 
@@ -605,11 +667,11 @@
 
 <aside class="right-panel">
   <div class="panel-section" id="conflictPanelSection" style="display:none">
-    <div class="panel-title" style="color:var(--danger)">ACTIVE CONFLICTS <span class="count" id="conflictCount">0</span></div>
+    <div class="panel-title" style="color:var(--danger)">UNRESOLVED ADVISORIES <span class="count" id="conflictCount">0</span></div>
     <div id="conflictList"></div>
   </div>
   <div class="panel-section" id="resLogSection" style="display:none">
-    <div class="panel-title" style="color:var(--ok)">RESOLUTION LOG <span class="count" id="resLogCount">0</span></div>
+    <div class="panel-title" style="color:var(--ok)">RECENT ACTIONS <span class="count" id="resLogCount">0</span></div>
     <div id="resLogList"></div>
   </div>
   <div class="panel-section">
@@ -629,7 +691,7 @@
   <div class="ticker"><span class="label">ZOOM:</span><span class="value" id="zoomLabel">1.0×</span></div>
   <div class="ticker"><span class="label">VISIBLE:</span><span class="value" id="visibleCount">0</span></div>
   <div class="ticker"><span class="label">SELECTED:</span><span class="value" id="selectedLabel">—</span></div>
-  <div class="ticker" style="margin-left:auto"><span class="label">WATCHYOJET v0.4.0 · AUTONOMOUS ATC</span></div>
+  <div class="ticker" style="margin-left:auto"><span class="label">ADVISORY SIMULATION · NOT FOR OPERATIONAL USE</span></div>
 </footer>
 
 <script>
@@ -2417,9 +2479,8 @@ function renderConflictPanel() {
   for (const [k, v] of resolvedSet) if (now - v.ts > 12000) resolvedSet.delete(k);
 
   const hasActive = conflictSet.size > 0;
-  const hasResolved = resolvedSet.size > 0;
 
-  if (!hasActive && !hasResolved) { section.style.display = 'none'; return; }
+  if (!hasActive) { section.style.display = 'none'; return; }
   section.style.display = '';
   countEl.textContent = conflictSet.size;
 
@@ -2428,17 +2489,7 @@ function renderConflictPanel() {
     return `<div class="conflict-item"><div class="conflict-row"><span class="alert-tag">ALERT</span>${escapeHtml(cs1)} ↔ ${escapeHtml(cs2)}</div></div>`;
   }).join('');
 
-  const resolvedHtml = Array.from(resolvedSet.entries()).map(([key, v]) => {
-    const [cs1, cs2] = JSON.parse(key);
-    const resLine = v.actionText
-      ? `<div class="resolution-detail">↳ ${escapeHtml(v.movedCs)} → ${escapeHtml(v.actionText)}</div>`
-      : v.movedCs && v.newAlt
-        ? `<div class="resolution-detail">↳ ${escapeHtml(v.movedCs)} → FL${String(Math.floor(v.newAlt/100)).padStart(3,'0')} (${Math.round(v.newAlt).toLocaleString()} ft)</div>`
-        : '';
-    return `<div class="conflict-item resolved-item"><div class="conflict-row"><span class="alert-tag resolved-tag">✓ OK</span>${escapeHtml(cs1)} ↔ ${escapeHtml(cs2)}</div>${resLine}</div>`;
-  }).join('');
-
-  list.innerHTML = activeHtml + resolvedHtml;
+  list.innerHTML = activeHtml;
 }
 
 function markConflict(cs1, cs2) {
@@ -2481,6 +2532,7 @@ function setDataStatus(status) {
   }
   el.textContent = status;
   el.style.borderColor = status.startsWith('LIVE') ? '#42d392' : status.startsWith('STALE') ? '#f6c85f' : '#ef6b73';
+  el.style.color = status.startsWith('LIVE') ? '#7ee787' : status.startsWith('STALE') ? '#e3b341' : '#ff7b72';
 }
 
 const _baseGetVisible = getVisibleAircraft;

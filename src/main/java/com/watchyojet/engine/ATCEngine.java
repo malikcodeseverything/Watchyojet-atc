@@ -170,7 +170,10 @@ public class ATCEngine {
                         + " new conflict(s) introduced by resolution — will handle next cycle");
         }
 
-        notifyConflicts(conflicts, resolvedPairs);
+        // Only unresolved pairs belong in the active-alert panel. Previously the
+        // UI received every pre-resolution conflict, which made resolved traffic
+        // look active for another 15 seconds and caused the alert flood.
+        notifyConflicts(unresolvedPairs, resolvedPairs);
         updateMap(aircrafts);
     }
 
@@ -217,13 +220,10 @@ public class ATCEngine {
 
     // ── UI bridge ─────────────────────────────────────────────────────────────
 
-    private void notifyConflicts(List<Conflict> conflicts, List<String[]> resolvedPairs) {
+    private void notifyConflicts(List<String[]> unresolvedPairs, List<String[]> resolvedPairs) {
         WYJAppController ctrl = WYJAppController.getInstance();
         if (ctrl == null) return;
-        List<String[]> allPairs = new ArrayList<>();
-        for (Conflict c : conflicts)
-            allPairs.add(new String[]{c.getA1().getCallsign(), c.getA2().getCallsign()});
-        ctrl.batchNotify(allPairs, resolvedPairs);
+        ctrl.batchNotify(unresolvedPairs, resolvedPairs);
     }
 
     private void updateMap(List<Aircraft> aircrafts) {

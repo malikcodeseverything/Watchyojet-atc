@@ -69,4 +69,39 @@ public class ConflictDetectorTest {
 
         assertTrue(conflicts.size() >= 1);
     }
+
+    @Test
+    void shouldUseThreeMilesForTerminalTraffic() {
+        // Opposite-direction tracks cross with about 4 NM lateral separation.
+        Aircraft a1 = new Aircraft("A1", 40.0000, -75.1, 5_000, 300, 90, AircraftType.A320);
+        Aircraft a2 = new Aircraft("A2", 40.0667, -74.9, 5_000, 300, 270, AircraftType.A320);
+
+        List<Conflict> conflicts = new ConflictDetector().detectConflicts(List.of(a1, a2));
+
+        assertEquals(0, conflicts.size());
+    }
+
+    @Test
+    void shouldUseFiveMilesForEnRouteTraffic() {
+        // Same 4 NM crossing geometry, but the en-route profile requires 5 NM.
+        Aircraft a1 = new Aircraft("A1", 40.0000, -75.1, 30_000, 300, 90, AircraftType.A320);
+        Aircraft a2 = new Aircraft("A2", 40.0667, -74.9, 30_000, 300, 270, AircraftType.A320);
+
+        List<Conflict> conflicts = new ConflictDetector().detectConflicts(List.of(a1, a2));
+
+        assertEquals(1, conflicts.size());
+        assertEquals("En route", conflicts.get(0).getZone());
+        assertEquals(5.0, conflicts.get(0).getLateralMinimum());
+    }
+
+    @Test
+    void shouldUseProjectedAltitudeForClimbingTraffic() {
+        Aircraft a1 = new Aircraft("A1", 40.0, -75.0, 5_000, 300, 90, AircraftType.A320);
+        Aircraft a2 = new Aircraft("A2", 40.0, -74.8, 5_000, 300, 270, AircraftType.A320);
+        a1.setVerticalRateFpm(1_500);
+
+        List<Conflict> conflicts = new ConflictDetector().detectConflicts(List.of(a1, a2));
+
+        assertEquals(0, conflicts.size());
+    }
 }

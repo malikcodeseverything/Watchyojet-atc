@@ -8,9 +8,6 @@ import com.watchyojet.model.Conflict;
 
 public class ConflictDetector {
 
-    private static final double MIN_DISTANCE = 5.0;
-    private static final double MAX_LOOKAHEAD_SECONDS = 600.0;
-
     public List<Conflict> detectConflicts(List<Aircraft> aircrafts) {
         return detectConflicts(aircrafts, true);
     }
@@ -25,16 +22,15 @@ public class ConflictDetector {
                 Aircraft a1 = aircrafts.get(i);
                 Aircraft a2 = aircrafts.get(j);
 
-                double altitudeDiff = Math.abs(
-                        Math.round(a1.getAltitude()) - Math.round(a2.getAltitude()));
-
+                USSeparationPolicy.Zone zone = USSeparationPolicy.zoneFor(a1, a2);
                 double tCPA = timeToCPA(a1, a2);
 
-                if (tCPA <= 0 || tCPA >= MAX_LOOKAHEAD_SECONDS) continue;
+                if (tCPA <= 0 || tCPA >= zone.lookaheadSeconds()) continue;
 
                 double cpaDistance = distanceAtCPA(a1, a2, tCPA);
+                double altitudeDiff = altitudeDifferenceAtCPA(a1, a2, tCPA);
 
-                if (cpaDistance < MIN_DISTANCE && altitudeDiff < 1000) {
+                if (cpaDistance < zone.lateralNm() && altitudeDiff < zone.verticalFeet()) {
 
                     String sevStr = classifySeverity(cpaDistance, altitudeDiff);
                     Conflict.Severity severity = switch (sevStr) {
@@ -43,7 +39,8 @@ public class ConflictDetector {
                         default         -> Conflict.Severity.MEDIUM;
                     };
 
-                    conflicts.add(new Conflict(a1, a2, severity, tCPA, cpaDistance));
+                    conflicts.add(new Conflict(a1, a2, severity, tCPA, cpaDistance,
+                            zone.label(), zone.lateralNm(), zone.verticalFeet()));
 
                     if (logConflicts) {
                         System.out.println("\n[CONFLICT DETECTED]");
@@ -51,6 +48,9 @@ public class ConflictDetector {
                         System.out.println("→ tCPA: " + String.format("%.0f", tCPA) + " sec");
                         System.out.println("→ dCPA: " + String.format("%.2f", cpaDistance) + " NM");
                         System.out.println("→ Altitude diff: " + String.format("%.0f", altitudeDiff) + " ft");
+                        System.out.println("→ Profile: " + zone.label() + " ("
+                                + String.format("%.0f", zone.lateralNm()) + " NM / "
+                                + String.format("%.0f", zone.verticalFeet()) + " ft)");
                         System.out.println("→ Severity: " + sevStr);
                     }
                 }
@@ -93,6 +93,18 @@ public class ConflictDetector {
         double[] p2 = TrajectoryPredictor.predictPosition(a2, tCPA);
 
         return distanceNM(p1[0], p1[1], p2[0], p2[1]);
+    }
+
+    private double altitudeDifferenceAtCPA(Aircraft a1, Aircraft a2, double tCPA) {
+        // Vertical rates become unreliable when extrapolated for many minutes.
+        // Three minutes captures established climbs/descents without assuming
+        // they continue unchanged for the detector's full horizontal horizon.
+        double projectionSeconds = Math.min(tCPA, 180.0);
+        double projectedA1 = a1.getAltitude()
+                + a1.getVerticalRateFpm() * projectionSeconds / 60.0;
+        double projectedA2 = a2.getAltitude()
+                + a2.getVerticalRateFpm() * projectionSeconds / 60.0;
+        return Math.abs(Math.round(projectedA1) - Math.round(projectedA2));
     }
 
     private double distanceNM(double lat1, double lon1, double lat2, double lon2) {

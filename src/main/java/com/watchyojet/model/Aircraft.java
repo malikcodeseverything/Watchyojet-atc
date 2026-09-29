@@ -10,6 +10,7 @@ public class Aircraft {
     private double altitude;
     private double speed;
     private double heading;
+    private double verticalRateFpm;
 
     public Aircraft(String callsign, double lat, double lon,
     double altitude, double speed, double heading,
@@ -30,6 +31,7 @@ public class Aircraft {
     this.speed = speed;//nau mi/hr
     this.heading = heading;
     this.type = type;
+    this.verticalRateFpm = 0;
     }
 
     public double getLat()
@@ -109,6 +111,14 @@ public class Aircraft {
 
 public void setSpeed(double speed) {
         this.speed = speed;
+    }
+
+    public double getVerticalRateFpm() {
+        return verticalRateFpm;
+    }
+
+    public void setVerticalRateFpm(double verticalRateFpm) {
+        this.verticalRateFpm = verticalRateFpm;
     }
 
 }

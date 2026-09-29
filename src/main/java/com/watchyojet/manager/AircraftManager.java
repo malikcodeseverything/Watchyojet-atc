@@ -29,6 +29,7 @@ public class AircraftManager {
                 existing.setSpeed(live.getSpeed());
                 existing.setCallsign(live.getCallsign());
                 existing.setType(live.getType());
+                existing.setVerticalRateFpm(live.getVerticalRateFpm());
                 // Shadow-mode resolutions are hypothetical. A fresh observation must
                 // restore the real reported altitude instead of drifting from reality.
                 existing.setAltitude(live.getAltitude());

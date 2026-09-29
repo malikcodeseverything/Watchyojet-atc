@@ -31,7 +31,7 @@ public class Main {
         String nominalStatus = null;
         boolean fallbackDemoLoaded = false;
 
-        System.out.println("Initializing WatchyoJet Autonomous ATC Shadow Mode...");
+        System.out.println("Initializing WatchyoJet traffic advisory simulation...");
         if (DEMO_MODE) {
             System.out.println("[DEMO] Running controlled scenario — 10 aircraft, 3 conflict pairs");
             nominalStatus = "DEMO — deterministic offline traffic";

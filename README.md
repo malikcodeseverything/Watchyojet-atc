@@ -19,7 +19,11 @@ point of approach (CPA) prediction, and an interactive JavaFX/WebView display.
 - Retains the last-known snapshot during transient API failures.
 - Labels cached traffic as stale and switches to demo traffic after 60 seconds.
 - Loads a deterministic demo scenario when no initial live snapshot is available.
-- Predicts converging traffic up to ten minutes ahead using CPA geometry.
+- Applies a U.S. terminal profile (3 NM, two-minute alert horizon below 10,000
+  ft) and an en-route profile (5 NM, five-minute alert horizon) using CPA
+  geometry.
+- Projects reported climb/descent rates for up to three minutes when evaluating
+  vertical separation and rejects stale state vectors older than 20 seconds.
 - Groups related conflicts before proposing altitude, heading, or speed changes.
 - Refuses to invent a maneuver when no candidate passes the safety checks.
 - Displays live aircraft, conflicts, resolutions, and an event history.
@@ -98,6 +102,13 @@ not roll back hypothetical commands. This is appropriate only for a shadow-mode
 demonstrator and is another reason the project must not be used operationally.
 Speed thresholds use OpenSky ground speed because indicated airspeed is not
 provided by the state-vector feed.
+
+The separation profiles are intentionally operating-zone based rather than
+city based. FAA Class B and C shelves are individually tailored, while the
+public state-vector feed does not identify controller jurisdiction, IFR/VFR
+status, wake category, assigned procedure, or runway configuration. WatchyoJet
+therefore must not claim facility-level compliance that its source data cannot
+support.
 
 ## Reliability and security
 

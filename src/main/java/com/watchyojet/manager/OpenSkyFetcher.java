@@ -24,6 +24,7 @@ public class OpenSkyFetcher {
     // PHL TRACON area: ~60 NM radius around Philadelphia International (39.87N, 75.24W)
     private static final String OPENSKY_URL =
         "https://opensky-network.org/api/states/all?lamin=38.8&lomin=-76.5&lamax=40.9&lomax=-74.0";
+    private static final long MAX_STATE_AGE_SECONDS = 20;
 
     private final HttpClient   client;
     private final ObjectMapper mapper;
@@ -69,6 +70,14 @@ public class OpenSkyFetcher {
 
                 if (state.size() < 11) continue;
 
+                // A stale vector creates a convincing but fictional projected
+                // conflict. OpenSky index 4 is the last-contact epoch second.
+                if (state.size() > 4 && !state.get(4).isNull()) {
+                    long age = Math.max(0, System.currentTimeMillis() / 1_000L
+                            - state.get(4).asLong());
+                    if (age > MAX_STATE_AGE_SECONDS) continue;
+                }
+
                 // skip if essential fields are null
                 if (state.get(1).isNull()  ||   // callsign
                     state.get(5).isNull()  ||   // longitude
@@ -99,20 +108,27 @@ public class OpenSkyFetcher {
                 double altitudeFeet = altMeters * 3.28084;
                 double speedKnots   = state.get(9).asDouble() * 1.94384;
                 double heading      = state.get(10).asDouble();
+                double verticalRateFpm = state.size() > 11 && !state.get(11).isNull()
+                        ? state.get(11).asDouble() * 196.850394
+                        : 0.0;
 
                 if (!Double.isFinite(lat) || !Double.isFinite(lon)
                         || !Double.isFinite(altitudeFeet) || !Double.isFinite(speedKnots)
                         || !Double.isFinite(heading)
                         || lat < -90 || lat > 90 || lon < -180 || lon > 180
                         || altitudeFeet < -2_000 || altitudeFeet > 100_000
-                        || speedKnots < 0 || speedKnots > 2_000) {
+                        || speedKnots < 0 || speedKnots > 2_000
+                        || !Double.isFinite(verticalRateFpm)
+                        || Math.abs(verticalRateFpm) > 8_000) {
                     continue;
                 }
 
                 AircraftType type = inferType(speedKnots, altitudeFeet);
 
-                liveAircraft.add(new Aircraft(icao24, callsign, lat, lon,
-                        altitudeFeet, speedKnots, heading, type));
+                Aircraft aircraft = new Aircraft(icao24, callsign, lat, lon,
+                        altitudeFeet, speedKnots, heading, type);
+                aircraft.setVerticalRateFpm(verticalRateFpm);
+                liveAircraft.add(aircraft);
             }
 
             return new FetchResult(true, liveAircraft,
