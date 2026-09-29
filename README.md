@@ -1,247 +1,135 @@
-# WatchyoJet — Autonomous ATC Shadow System
+# WatchyoJet ATC
 
-**WatchyoJet** is a real-time autonomous Air Traffic Control (ATC) decision system running in **shadow mode** over the Philadelphia TRACON airspace. It pulls live flight data from the [OpenSky Network](https://opensky-network.org), simulates aircraft movement, detects separation conflicts using Closest Point of Approach (CPA) math, and automatically issues altitude, heading, and speed resolutions — with no human input.
+[![Build and test](https://github.com/malikcodeseverything/watchyojet-atc/actions/workflows/build.yml/badge.svg)](https://github.com/malikcodeseverything/watchyojet-atc/actions/workflows/build.yml)
 
-> **Shadow mode** means the system makes decisions and logs them, but does not transmit commands to real aircraft.
+WatchyoJet is an educational, real-time air-traffic conflict detection and
+resolution simulator focused on the Philadelphia terminal area. It combines
+live public OpenSky state vectors with a two-second simulation loop, closest
+point of approach (CPA) prediction, and an interactive JavaFX/WebView display.
 
-**How we started** 
-![WatchyoJet GUI](POC.jpg)
+> **Safety notice:** WatchyoJet is a student-built simulation and portfolio
+> project. It is not certified aviation software, must not be used for
+> operational decision-making, and never transmits instructions to aircraft.
 
-**How we finished**
-![NEW WatchyojetGUI](NEW_WatchyojetGUI.jpg)
+![WatchyoJet interface](NEW_WatchyojetGUI.jpg)
 
----
+## Highlights
 
-## What it does
+- Tracks public live traffic around Philadelphia when OpenSky is available.
+- Retains the last-known snapshot during transient API failures.
+- Labels cached traffic as stale and switches to demo traffic after 60 seconds.
+- Loads a deterministic demo scenario when no initial live snapshot is available.
+- Predicts converging traffic up to ten minutes ahead using CPA geometry.
+- Groups related conflicts before proposing altitude, heading, or speed changes.
+- Refuses to invent a maneuver when no candidate passes the safety checks.
+- Displays live aircraft, conflicts, resolutions, and an event history.
+- Runs automated tests on Linux, macOS, and Windows through GitHub Actions.
 
-- Fetches live aircraft positions from the **OpenSky Network API** every 12 seconds (PHL TRACON, ~60 NM radius around Philadelphia International)
-- Tracks **80–250 live flights** simultaneously
-- Simulates aircraft movement between API refreshes using 2-second cycles
-- Detects conflicts using **CPA math** — predicts converging aircraft before they get close
-- Classifies conflicts as `CRITICAL`, `HIGH`, or `MEDIUM`
-- Resolves conflicts automatically by issuing:
-  - Altitude changes (primary)
-  - Heading divergence (secondary)
-  - Speed reductions (last resort)
-- **Escalation logic**: if a conflict persists >2 cycles, forces hard separation (≥1000 ft vertical or >20° heading divergence)
-- Displays everything on a **live interactive map** with aircraft markers, conflict highlights, and an ATC event log
-- Falls back to a built-in demo scenario if the OpenSky API is unavailable
+## Run locally
 
----
+Requirements:
 
-## Requirements
-
-| Tool | Version | Download |
-|------|---------|----------|
-| Java JDK | **21 or higher** | https://adoptium.net |
-| Maven | **3.8 or higher** | https://maven.apache.org/download.cgi |
-| Internet connection | Required | Live OpenSky API |
-
-**Verify Java:**
-```
-java -version
-```
-Must print `openjdk 21` or higher.
-
-**Verify Maven:**
-```
-mvn -version
-```
-Must print `Apache Maven 3.x.x`.
-
-> **macOS shortcut (Homebrew):** `brew install --cask temurin@21` and `brew install maven`
-
----
-
-## Running the Application
-
-### Step 1 — Get the code
-
-**Clone the repository:**
-```bash
-git clone https://github.com/cis3296s26/final-project-05-watchyojet.git
-cd final-project-05-watchyojet
-```
-
-Or download and unzip from the [Releases](https://github.com/cis3296s26/final-project-05-watchyojet/releases) page.
-
-### Step 2 — Run
+- A full JDK 21 or newer
+- Maven 3.8 or newer
 
 ```bash
+git clone https://github.com/malikcodeseverything/watchyojet-atc.git
+cd watchyojet-atc
 mvn javafx:run
 ```
 
-Maven downloads all dependencies automatically on the first run (~100 MB). The application window opens within 10–15 seconds.
-
-> **Windows:** the command is identical — run it in Command Prompt or PowerShell.
-
-**For Windows Users
-1. Downloaded Apache Maven from wesbite
-2. Unzip file
-3. Create new folder in C: drive named Maven
-4. Go to System Properties -> Advanced
-5. Bottom right of screen click Environment Variables
-6. Under System variables, double-click Path
-7. Click new, and copy the path of maven/bin
-8. Press ok
-9. Open IDE, use "mvn javafx:run" to start the application
-
----
-
-## What to expect when it starts
-
-Terminal output:
-```
-Initializing WatchyoJet Autonomous ATC Shadow Mode...
-[SYSTEM] Fetching LIVE traffic (PHL Airspace)...
-[SYSTEM] Airspace refreshed. Tracking 87 live flights.
-```
-
-The GUI window shows:
-- **Live map** of PHL airspace with aircraft icon markers
-- **Colors:** white = normal, yellow = near conflict, red = active conflict, green = recently resolved
-- **Click any aircraft** to see callsign, altitude, speed, and heading
-- **Event log panel** on the right with real-time ATC decisions
-
-When a conflict is detected:
-```
-[CONFLICT DETECTED]
-AAL123 ↔ UAL456
-→ tCPA: 87 sec
-→ dCPA: 0.41 NM
-→ Altitude diff: 200 ft
-→ Severity: CRITICAL
-
-[RESOLVED] AAL123 → 32000 ft
-```
-
-When a conflict persists and escalates:
-```
-[ESCALATE] 1 conflict pair(s) persisted >2 cycles → hard resolution
-[HARD-ALT] AAL123 → 31000 ft (forced vertical)
-```
-
-> The app requires an active internet connection. If OpenSky rate-limits (429), the system logs `[FETCHER] API rate limited` and continues on the last known positions until the next fetch succeeds.
-
----
-
-## Running the tests
+Live mode is the default. To run the deterministic offline scenario:
 
 ```bash
-mvn test
+mvn javafx:run -Dwatchyojet.demo=true
 ```
 
-6 tests across two classes:
-- `ConflictDetectorTest` — conflict detection, altitude separation, multi-aircraft scenarios
-- `MovementEngineTest` — straight and diagonal flight movement
+The first Maven run downloads the required JavaFX and Jackson dependencies.
 
-Expected:
-```
-Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
-BUILD SUCCESS
-```
+## Test and build
 
----
-
-## Building from source
+Run the complete test suite:
 
 ```bash
-mvn clean package
+mvn clean verify
 ```
 
-Produces `target/WatchYoJet-1.0-SNAPSHOT-jar-with-dependencies.jar`.
+Create a platform-specific runtime image:
 
-> Due to JavaFX's modular architecture, the fat jar cannot be launched with `java -jar`. Always use `mvn javafx:run`.
+```bash
+mvn clean verify javafx:jlink
+```
 
----
+Create a self-contained application image for the current operating system:
+
+```bash
+./scripts/package-app.sh
+```
+
+The result is placed in `target/dist`. Packaging must run separately on each
+target operating system because JavaFX includes platform-native components.
+
+## How it works
+
+```text
+OpenSky state vectors / demo scenario
+                 |
+                 v
+          AircraftManager
+                 |
+       two-second engine cycle
+                 |
+     +-----------+------------+
+     |           |            |
+ movement   CPA detection   resolution search
+     |           |            |
+     +-----------+------------+
+                 |
+                 v
+       JavaFX + embedded WebView
+```
+
+The resolution output represents hypothetical shadow-mode decisions. Every
+fresh OpenSky observation restores the reported aircraft state so simulated
+commands cannot be mistaken for real changes.
+
+The post-resolution check reports any additional predicted conflicts but does
+not roll back hypothetical commands. This is appropriate only for a shadow-mode
+demonstrator and is another reason the project must not be used operationally.
+Speed thresholds use OpenSky ground speed because indicated airspeed is not
+provided by the state-vector feed.
+
+## Reliability and security
+
+- Network requests use connect and response timeouts.
+- Malformed or physically implausible state vectors are rejected.
+- External callsigns and UI messages are JSON-encoded at the JavaScript boundary.
+- CI receives read-only repository permissions.
+- Dependabot monitors Maven and GitHub Actions dependencies.
+- The app does not require API keys or collect user information.
 
 ## Project structure
 
-```
-final-project-05-watchyojet/
-├── src/
-│   ├── main/java/com/watchyojet/
-│   │   ├── engine/
-│   │   │   ├── ATCEngine.java            ← 2-second control loop + escalation
-│   │   │   ├── ConflictDetector.java     ← CPA-based conflict prediction
-│   │   │   ├── ResolutionEngine.java     ← Alt/heading/speed resolution search
-│   │   │   └── TrajectoryPredictor.java  ← Position extrapolation
-│   │   ├── manager/
-│   │   │   ├── AircraftManager.java      ← Thread-safe aircraft registry
-│   │   │   └── OpenSkyFetcher.java       ← Live OpenSky API ingestion
-│   │   ├── model/
-│   │   │   ├── Aircraft.java
-│   │   │   ├── AircraftType.java
-│   │   │   ├── Conflict.java
-│   │   │   └── Resolution.java
-│   │   ├── simulation/
-│   │   │   ├── MovementEngine.java       ← Dead-reckoning position updates
-│   │   │   └── DemoScenario.java         ← Offline fallback scenario
-│   │   ├── WYJApp.java                   ← JavaFX entry point
-│   │   └── WYJAppController.java         ← UI controller / JS bridge
-│   ├── main/resources/                   ← FXML, CSS, map HTML
-│   └── test/java/com/watchyojet/
-│       ├── engine/ConflictDetectorTest.java
-│       └── simulation/MovementEngineTest.java
-├── Documentation/
-│   ├── WATCHYOJET_DOCS.md                ← Full system documentation
-│   ├── uml.html                          ← UML class and sequence diagrams
-│   └── presentation.html                 ← Final presentation slides
-├── pom.xml
-└── README.md
+```text
+src/main/java/com/watchyojet/
+  engine/       conflict prediction and resolution
+  manager/      aircraft state and OpenSky ingestion
+  model/        aircraft, conflict, and resolution models
+  simulation/   movement and deterministic demo traffic
+src/main/resources/
+  map.html      interactive traffic display
+src/test/java/
+  regression and geometry tests
 ```
 
----
+## Attribution
 
-## Architecture
+WatchyoJet began as a Temple University CIS 3296 team project in the
+[`cis3296s26`](https://github.com/cis3296s26/final-project-05-watchyojet)
+organization. The preserved Git history records contributions from Hamza Malik,
+Brandon Son, Dylan Vo, and the contributors represented by the
+`RevengeChivalry` account. This personal fork is maintained by Hamza Malik for
+portfolio hardening, testing, packaging, and deployment work.
 
-```
-OpenSky Network API
-        │
-        ▼  every 12 seconds
-  OpenSkyFetcher
-        │
-        ▼
-  AircraftManager ── preserves ATC-issued altitudes across refreshes
-        │
-        ▼  every 2 seconds
-    ATCEngine
-    ├── MovementEngine       → dead-reckoning lat/lon update
-    ├── ConflictDetector     → CPA math, severity classification
-    ├── ResolutionEngine     → altitude / heading / speed search
-    │   └── escalation       → hard separation after >2 cycles
-    └── WYJAppController     → JavaFX UI bridge (Platform.runLater)
-                                      │
-                                      ▼
-                              WebView (Leaflet.js map)
-                              + ATC event log panel
-```
-
----
-
-## Tech stack
-
-| Layer | Technology |
-|-------|------------|
-| Language | Java 21 |
-| UI | JavaFX 21 |
-| Map | Leaflet.js (embedded in WebView) |
-| HTTP | `java.net.http.HttpClient` (built-in) |
-| JSON | Jackson `ObjectMapper` |
-| Build | Maven 3.8+ |
-| Live data | OpenSky Network REST API |
-| Frontend | HTML / CSS / JavaScript (no framework) |
-
----
-
-## Links
-
-- **Repository:** https://github.com/cis3296s26/final-project-05-watchyojet
-- **Project board:** https://github.com/orgs/cis3296s26/projects/43/views/1
-- **Releases:** https://github.com/cis3296s26/final-project-05-watchyojet/releases
-
----
-
-## Course
-
-CIS 3296 — Software Design, Spring 2026 | Temple University
+No open-source license has been added because this originated as a team course
+project. Reuse requires permission from the relevant contributors.

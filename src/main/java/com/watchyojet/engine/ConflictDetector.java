@@ -11,9 +11,11 @@ public class ConflictDetector {
     private static final double MIN_DISTANCE = 5.0;
     private static final double MAX_LOOKAHEAD_SECONDS = 600.0;
 
-    private static final boolean DEMO_MODE = false;
-
     public List<Conflict> detectConflicts(List<Aircraft> aircrafts) {
+        return detectConflicts(aircrafts, true);
+    }
+
+    List<Conflict> detectConflicts(List<Aircraft> aircrafts, boolean logConflicts) {
 
         List<Conflict> conflicts = new ArrayList<>();
 
@@ -32,8 +34,7 @@ public class ConflictDetector {
 
                 double cpaDistance = distanceAtCPA(a1, a2, tCPA);
 
-                // Disabled in demo mode
-                if (!DEMO_MODE && cpaDistance < MIN_DISTANCE && altitudeDiff < 1000) {
+                if (cpaDistance < MIN_DISTANCE && altitudeDiff < 1000) {
 
                     String sevStr = classifySeverity(cpaDistance, altitudeDiff);
                     Conflict.Severity severity = switch (sevStr) {
@@ -44,12 +45,14 @@ public class ConflictDetector {
 
                     conflicts.add(new Conflict(a1, a2, severity, tCPA, cpaDistance));
 
-                    System.out.println("\n[CONFLICT DETECTED]");
-                    System.out.println(a1.getCallsign() + " ↔ " + a2.getCallsign());
-                    System.out.println("→ tCPA: " + String.format("%.0f", tCPA) + " sec");
-                    System.out.println("→ dCPA: " + String.format("%.2f", cpaDistance) + " NM");
-                    System.out.println("→ Altitude diff: " + String.format("%.0f", altitudeDiff) + " ft");
-                    System.out.println("→ Severity: " + sevStr);
+                    if (logConflicts) {
+                        System.out.println("\n[CONFLICT DETECTED]");
+                        System.out.println(a1.getCallsign() + " ↔ " + a2.getCallsign());
+                        System.out.println("→ tCPA: " + String.format("%.0f", tCPA) + " sec");
+                        System.out.println("→ dCPA: " + String.format("%.2f", cpaDistance) + " NM");
+                        System.out.println("→ Altitude diff: " + String.format("%.0f", altitudeDiff) + " ft");
+                        System.out.println("→ Severity: " + sevStr);
+                    }
                 }
             }
         }

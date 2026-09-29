@@ -93,14 +93,15 @@ public class ATCEngine {
 
             for (Resolution r : clusterResolutions) {
                 String cs = r.getAircraft().getCallsign();
-                locked.add(cs);
-                resolutionCooldown.put(cs, now);
+                String aircraftId = r.getAircraft().getId();
+                locked.add(aircraftId);
+                resolutionCooldown.put(aircraftId, now);
                 allResolutions.add(r);
 
                 // find both callsigns for the first conflict involving this aircraft
                 String cs1 = cs, cs2 = cs;
                 for (Conflict c : cluster) {
-                    if (c.getA1().getCallsign().equals(cs) || c.getA2().getCallsign().equals(cs)) {
+                    if (c.getA1().getId().equals(aircraftId) || c.getA2().getId().equals(aircraftId)) {
                         cs1 = c.getA1().getCallsign();
                         cs2 = c.getA2().getCallsign();
                         break;
@@ -121,9 +122,9 @@ public class ATCEngine {
             // any conflict in the cluster with both aircraft still locked = unresolved
             for (Conflict c : cluster) {
                 boolean a1resolved = allResolutions.stream()
-                    .anyMatch(r -> r.getAircraft().getCallsign().equals(c.getA1().getCallsign()));
+                    .anyMatch(r -> r.getAircraft().getId().equals(c.getA1().getId()));
                 boolean a2resolved = allResolutions.stream()
-                    .anyMatch(r -> r.getAircraft().getCallsign().equals(c.getA2().getCallsign()));
+                    .anyMatch(r -> r.getAircraft().getId().equals(c.getA2().getId()));
                 if (!a1resolved && !a2resolved) {
                     unresolvedPairs.add(new String[]{c.getA1().getCallsign(), c.getA2().getCallsign()});
                 }
@@ -155,11 +156,14 @@ public class ATCEngine {
 
         // post-resolution sanity check
         if (!allResolutions.isEmpty()) {
-            List<Conflict> postCheck = detector.detectConflicts(aircrafts);
+            Set<String> originalPairs = new HashSet<>();
+            for (Conflict conflict : conflicts) originalPairs.add(conflictKey(conflict));
+            List<Conflict> postCheck = detector.detectConflicts(aircrafts, false);
             long newlyCreated = postCheck.stream()
+                .filter(pc -> !originalPairs.contains(conflictKey(pc)))
                 .filter(pc -> allResolutions.stream().anyMatch(res ->
-                    res.getAircraft().getCallsign().equals(pc.getA1().getCallsign()) ||
-                    res.getAircraft().getCallsign().equals(pc.getA2().getCallsign())))
+                    res.getAircraft().getId().equals(pc.getA1().getId()) ||
+                    res.getAircraft().getId().equals(pc.getA2().getId())))
                 .count();
             if (newlyCreated > 0)
                 System.out.println("[WARNING] " + newlyCreated
@@ -173,9 +177,9 @@ public class ATCEngine {
     // ── Conflict key ─────────────────────────────────────────────────────────
 
     private static String conflictKey(Conflict c) {
-        String cs1 = c.getA1().getCallsign();
-        String cs2 = c.getA2().getCallsign();
-        return cs1.compareTo(cs2) < 0 ? cs1 + ":" + cs2 : cs2 + ":" + cs1;
+        String id1 = c.getA1().getId();
+        String id2 = c.getA2().getId();
+        return id1.compareTo(id2) < 0 ? id1 + ":" + id2 : id2 + ":" + id1;
     }
 
     // ── BFS cluster detection ─────────────────────────────────────────────────
@@ -184,8 +188,8 @@ public class ATCEngine {
         // build adjacency: callsign → set of conflicts involving that aircraft
         Map<String, Set<Conflict>> byCallsign = new HashMap<>();
         for (Conflict c : conflicts) {
-            byCallsign.computeIfAbsent(c.getA1().getCallsign(), k -> new HashSet<>()).add(c);
-            byCallsign.computeIfAbsent(c.getA2().getCallsign(), k -> new HashSet<>()).add(c);
+            byCallsign.computeIfAbsent(c.getA1().getId(), k -> new HashSet<>()).add(c);
+            byCallsign.computeIfAbsent(c.getA2().getId(), k -> new HashSet<>()).add(c);
         }
 
         Set<Conflict>       visited  = new HashSet<>();
@@ -200,8 +204,8 @@ public class ATCEngine {
             while (!queue.isEmpty()) {
                 Conflict curr = queue.poll();
                 cluster.add(curr);
-                for (String cs : new String[]{curr.getA1().getCallsign(), curr.getA2().getCallsign()}) {
-                    for (Conflict neighbor : byCallsign.getOrDefault(cs, Collections.emptySet())) {
+                for (String aircraftId : new String[]{curr.getA1().getId(), curr.getA2().getId()}) {
+                    for (Conflict neighbor : byCallsign.getOrDefault(aircraftId, Collections.emptySet())) {
                         if (visited.add(neighbor)) queue.add(neighbor);
                     }
                 }

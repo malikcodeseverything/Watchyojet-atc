@@ -4,14 +4,17 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.example</groupId>
-    <artifactId>WatchYoJet</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <groupId>io.github.malikcodeseverything</groupId>
+    <artifactId>watchyojet-atc</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <name>WatchyoJet ATC</name>
+    <description>Educational air-traffic conflict detection and resolution simulator</description>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     </properties>
 
     <dependencies>
@@ -24,7 +27,7 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.15.2</version>
+            <version>2.22.3</version>
         </dependency>
 
         <dependency>
@@ -40,7 +43,7 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.10.0</version>
+            <version>5.14.4</version>
             <scope>test</scope>
         </dependency>
          
@@ -58,7 +61,12 @@
                 <execution>
                     <id>default-cli</id>
                     <configuration>
-                        <mainClass>com.watchyojet.WYJApp</mainClass>
+                        <mainClass>com.watchyojet/com.watchyojet.WYJApp</mainClass>
+                        <launcher>watchyojet</launcher>
+                        <jlinkImageName>watchyojet</jlinkImageName>
+                        <stripDebug>true</stripDebug>
+                        <noHeaderFiles>true</noHeaderFiles>
+                        <noManPages>true</noManPages>
                     </configuration>
                 </execution>
             </executions>
@@ -80,41 +88,21 @@
             <version>3.1.2</version>
         </plugin>
 
-        <!-- Executable jar -->
         <plugin>
             <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-jar-plugin</artifactId>
-            <version>3.3.0</version>
+            <artifactId>maven-enforcer-plugin</artifactId>
+            <version>3.5.0</version>
             <configuration>
-                <archive>
-                    <manifest>
-                        <mainClass>com.watchyojet.WYJApp</mainClass>
-                    </manifest>
-                </archive>
-            </configuration>
-        </plugin>
-
-        <!-- Fat jar (THIS is the important one) -->
-        <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-assembly-plugin</artifactId>
-            <version>3.6.0</version>
-            <configuration>
-                <descriptorRefs>
-                    <descriptorRef>jar-with-dependencies</descriptorRef>
-                </descriptorRefs>
-                <archive>
-                    <manifest>
-                        <mainClass>com.watchyojet.WYJApp</mainClass>
-                    </manifest>
-                </archive>
+                <rules>
+                    <requireJavaVersion><version>[21,)</version></requireJavaVersion>
+                    <requireMavenVersion><version>[3.8,)</version></requireMavenVersion>
+                </rules>
             </configuration>
             <executions>
                 <execution>
-                    <id>make-assembly</id>
-                    <phase>package</phase>
+                    <id>enforce-toolchain</id>
                     <goals>
-                        <goal>single</goal>
+                        <goal>enforce</goal>
                     </goals>
                 </execution>
             </executions>

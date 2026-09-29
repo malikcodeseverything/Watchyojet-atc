@@ -17,22 +17,25 @@ public class AircraftManager {
 
         for (Aircraft live : liveData) {
 
-            String callsign = live.getCallsign();
+            String aircraftId = live.getId();
 
-            if (aircraftMap.containsKey(callsign)) {
+            if (aircraftMap.containsKey(aircraftId)) {
 
-                Aircraft existing = aircraftMap.get(callsign);
+                Aircraft existing = aircraftMap.get(aircraftId);
 
                 existing.setLat(live.getLat());
                 existing.setLon(live.getLon());
                 existing.setHeading(live.getHeading());
                 existing.setSpeed(live.getSpeed());
-
-                // don't overwrite altitude — ATC may have already issued a resolution
-                updatedMap.put(callsign, existing);
+                existing.setCallsign(live.getCallsign());
+                existing.setType(live.getType());
+                // Shadow-mode resolutions are hypothetical. A fresh observation must
+                // restore the real reported altitude instead of drifting from reality.
+                existing.setAltitude(live.getAltitude());
+                updatedMap.put(aircraftId, existing);
 
             } else {
-                updatedMap.put(callsign, live);
+                updatedMap.put(aircraftId, live);
             }
         }
 
@@ -45,7 +48,7 @@ public class AircraftManager {
 
     public void reset(List<Aircraft> fresh) {
         Map<String, Aircraft> newMap = new ConcurrentHashMap<>();
-        for (Aircraft a : fresh) newMap.put(a.getCallsign(), a);
+        for (Aircraft a : fresh) newMap.put(a.getId(), a);
         aircraftMap = newMap;
     }
 }

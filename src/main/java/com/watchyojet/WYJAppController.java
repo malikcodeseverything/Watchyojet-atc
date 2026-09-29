@@ -15,10 +15,15 @@ import javafx.stage.Stage;
 
 import java.net.URL;
 import java.util.List;
-import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.watchyojet.model.Aircraft;
 
 public class WYJAppController {
+    private static final ObjectMapper JSON = new ObjectMapper();
     private static WYJAppController instance;
     public static WYJAppController getInstance() {
         return instance;
@@ -49,12 +54,13 @@ public class WYJAppController {
         URL url = getClass().getResource("/map.html");
         if (url != null) {
             webEngine.load(url.toExternalForm());
-        } else {
-            webEngine.load("https://chivalry2.com"); // fallback URL
-        }
-
-
-        //handleThemeChange();
+        } else log("Map resource is missing; the traffic display cannot start.");
+        spawnMainThread.setOnFailed(event -> {
+            Throwable error = spawnMainThread.getException();
+            String detail = error == null ? "unknown error" : error.getMessage();
+            log("Engine stopped unexpectedly: " + detail);
+            setDataStatus("ERROR — simulation engine stopped");
+        });
     }
 
     @FXML
@@ -66,17 +72,34 @@ public class WYJAppController {
     public void log(String message) {
         Platform.runLater(() -> {
             logList.getItems().add(message);
+            if (logList.getItems().size() > 500) logList.getItems().remove(0, 100);
             logList.scrollTo(logList.getItems().size() - 1);
         });
     }
 
+    private final AtomicBoolean running = new AtomicBoolean(true);
+    private final AtomicBoolean started = new AtomicBoolean(false);
+    private volatile String currentDataStatus;
+
     Task<Void> spawnMainThread = new Task<>(){
         @Override
-        protected Void call() throws Exception{
-            Main.main(null);
+        protected Void call() {
+            Main.run(running);
             return null;
         }
     };
+
+    public void shutdown() {
+        running.set(false);
+        spawnMainThread.cancel(true);
+    }
+
+    public void startEngine() {
+        if (!started.compareAndSet(false, true)) return;
+        Thread engineThread = new Thread(spawnMainThread, "watchyojet-engine");
+        engineThread.setDaemon(true);
+        engineThread.start();
+    }
 
     @FXML
     public void handleClose() {
@@ -100,22 +123,25 @@ public class WYJAppController {
 
     public void updateAllAircraft(List<Aircraft> aircrafts) {
         if (aircrafts.isEmpty()) return;
+        final String aircraftJson;
+        try {
+            aircraftJson = JSON.writeValueAsString(aircrafts.stream().map(a -> Map.of(
+                    "id", a.getId(), "cs", a.getCallsign(), "lat", a.getLat(), "lon", a.getLon(),
+                    "alt", a.getAltitude(), "spd", a.getSpeed(), "hdg", a.getHeading()
+            )).toList());
+        } catch (JsonProcessingException e) {
+            log("Unable to encode aircraft update: " + e.getMessage());
+            return;
+        }
         Platform.runLater(() -> {
-            Object check = webEngine.executeScript("typeof batchUpdateAircraft !== 'undefined'");
-            if (!check.equals(true)) return;
-            StringBuilder sb = new StringBuilder("batchUpdateAircraft([");
-            boolean first = true;
-            for (Aircraft a : aircrafts) {
-                if (!first) sb.append(',');
-                first = false;
-                String cs = a.getCallsign()
-                        .replace("\\", "\\\\")
-                        .replace("'", "\\'");
-                sb.append(String.format(Locale.US, "{cs:'%s',lat:%f,lon:%f,alt:%f,spd:%f,hdg:%f}",
-                        cs, a.getLat(), a.getLon(), a.getAltitude(), a.getSpeed(), a.getHeading()));
+            try {
+                Object check = webEngine.executeScript("typeof batchUpdateAircraft !== 'undefined'");
+                if (check.equals(true)) {
+                    webEngine.executeScript("batchUpdateAircraft(" + aircraftJson + ")");
+                }
+            } catch (RuntimeException e) {
+                reportWebError("aircraft update", e);
             }
-            sb.append("])");
-            webEngine.executeScript(sb.toString());
         });
     }
 
@@ -124,48 +150,61 @@ public class WYJAppController {
             try {
                 Object check = webEngine.executeScript("typeof markConflict !== 'undefined'");
                 if (check.equals(true)) {
-                    String s1 = cs1.replace("'", "\\'"), s2 = cs2.replace("'", "\\'");
-                    webEngine.executeScript(String.format("markConflict('%s','%s')", s1, s2));
+                    webEngine.executeScript("markConflict(" + json(cs1) + "," + json(cs2) + ")");
                 }
-            } catch (Exception ignored) {}
+            } catch (RuntimeException e) {
+                reportWebError("conflict marker", e);
+            }
         });
     }
 
     public void batchNotify(List<String[]> conflictPairs, List<String[]> resolvedPairs) {
-        if (conflictPairs.isEmpty()) return;
+        if (conflictPairs.isEmpty() && resolvedPairs.isEmpty()) return;
         Platform.runLater(() -> {
             try {
                 Object check = webEngine.executeScript("typeof markConflict !== 'undefined'");
                 if (!check.equals(true)) return;
 
                 for (String[] pair : conflictPairs) {
-                    String s1 = pair[0].replace("'", "\\'");
-                    String s2 = pair[1].replace("'", "\\'");
-                    webEngine.executeScript(String.format("markConflict('%s','%s')", s1, s2));
+                    try {
+                        webEngine.executeScript("markConflict(" + json(pair[0]) + "," + json(pair[1]) + ")");
+                    } catch (RuntimeException e) {
+                        reportWebError("conflict marker", e);
+                    }
                 }
 
                 if (!resolvedPairs.isEmpty()) {
                     for (String[] pair : resolvedPairs) {
-                        String s1      = pair[0].replace("'", "\\'");
-                        String s2      = pair[1].replace("'", "\\'");
-                        String movedCs = pair.length > 2 ? pair[2].replace("'", "\\'") : "";
+                        String s1      = pair[0];
+                        String s2      = pair[1];
+                        String movedCs = pair.length > 2 ? pair[2] : "";
                         String val     = pair.length > 3 ? pair[3] : "0";
-                        if (val.startsWith("HDG:")) {
-                            String deg = val.substring(4);
-                            webEngine.executeScript(String.format(
-                                "typeof logATCEvent !== 'undefined' && logATCEvent('%s heading → %s°')",
-                                movedCs, deg));
-                        } else {
-                            webEngine.executeScript(String.format(
-                                "typeof markResolved !== 'undefined' && markResolved('%s','%s','%s',%s)",
-                                s1, s2, movedCs, val));
+                        try {
+                            if (val.startsWith("HDG:") || val.startsWith("SPD:")) {
+                                String action = val.startsWith("HDG:")
+                                        ? "heading → " + val.substring(4) + "°"
+                                        : "speed → " + val.substring(4) + " kt";
+                                webEngine.executeScript("typeof markResolved !== 'undefined' && markResolved("
+                                        + json(s1) + "," + json(s2) + "," + json(movedCs) + ",0,"
+                                        + json(action) + ")");
+                                webEngine.executeScript("typeof logATCEvent !== 'undefined' && logATCEvent("
+                                        + json(movedCs + " " + action) + ")");
+                            } else {
+                                webEngine.executeScript("typeof markResolved !== 'undefined' && markResolved("
+                                        + json(s1) + "," + json(s2) + "," + json(movedCs) + "," + val
+                                        + ",\"\")");
+                            }
+                        } catch (RuntimeException e) {
+                            reportWebError("resolution notification", e);
                         }
                     }
                     String msg = "✓ " + resolvedPairs.size() + " conflict(s) resolved";
-                    webEngine.executeScript(String.format(
-                        "typeof logATCEvent !== 'undefined' && logATCEvent('%s')", msg));
+                    webEngine.executeScript("typeof logATCEvent !== 'undefined' && logATCEvent("
+                            + json(msg) + ")");
                 }
-            } catch (Exception ignored) {}
+            } catch (RuntimeException e) {
+                reportWebError("resolution notification", e);
+            }
         });
     }
 
@@ -174,11 +213,43 @@ public class WYJAppController {
             try {
                 Object check = webEngine.executeScript("typeof logATCEvent !== 'undefined'");
                 if (check.equals(true)) {
-                    String safe = message.replace("'", "\\'").replace("\n", " ");
-                    webEngine.executeScript(String.format("logATCEvent('%s')", safe));
+                    webEngine.executeScript("logATCEvent(" + json(message.replace('\n', ' ')) + ")");
                 }
-            } catch (Exception ignored) {}
+            } catch (RuntimeException e) {
+                reportWebError("map log", e);
+            }
         });
+    }
+
+    public void setDataStatus(String status) {
+        currentDataStatus = status;
+        Platform.runLater(() -> {
+            try {
+                Object check = webEngine.executeScript("typeof setDataStatus !== 'undefined'");
+                if (check.equals(true)) webEngine.executeScript("setDataStatus(" + json(status) + ")");
+            } catch (RuntimeException e) {
+                reportWebError("data status", e);
+            }
+        });
+    }
+
+    public void refreshDataStatus() {
+        String status = currentDataStatus;
+        if (status != null) setDataStatus(status);
+    }
+
+    private static String json(String value) {
+        try {
+            return JSON.writeValueAsString(value == null ? "" : value);
+        } catch (JsonProcessingException e) {
+            return "\"\"";
+        }
+    }
+
+    private void reportWebError(String operation, RuntimeException error) {
+        String message = "Web UI " + operation + " failed: " + error.getMessage();
+        System.err.println(message);
+        log(message);
     }
 
 }
