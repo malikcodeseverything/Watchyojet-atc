@@ -2157,6 +2157,15 @@ document.getElementById('zoomOut').addEventListener('click', () => { state.view.
 document.getElementById('resetView').addEventListener('click', () => { updateViewForLevel(); _needsRedraw = true; _cachedVisible = null; });
 
 // ---------- RIGHT PANEL ----------
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
 function renderAircraftDetail() {
   const el = document.getElementById('aircraftDetail');
   const a = state.aircraft.find(x => x.id === state.selectedAircraftId);
@@ -2167,7 +2176,7 @@ function renderAircraftDetail() {
   }
   el.innerHTML = `
     <div class="aircraft-card">
-      <div class="callsign">${a.callsign}<span class="type-tag">${a.type}</span></div>
+      <div class="callsign">${escapeHtml(a.callsign)}<span class="type-tag">${escapeHtml(a.type)}</span></div>
       <div class="route">${a.route}</div>
       <span class="status-badge ${a.status}">● ${a.status.toUpperCase()}${a.groundRole?' · '+a.groundRole.toUpperCase():''}</span>
       <div class="telemetry-grid">
@@ -2192,7 +2201,7 @@ function renderNearbyList() {
   if (!visible.length) { el.innerHTML = `<div class="empty-state" style="padding:20px 10px">No traffic in view</div>`; return; }
   el.innerHTML = visible.map(a => `
     <div class="item" data-id="${a.id}" style="padding:8px 10px">
-      <span class="name" style="font-family:'JetBrains Mono',monospace;font-size:12px">${a.callsign}</span>
+      <span class="name" style="font-family:'JetBrains Mono',monospace;font-size:12px">${escapeHtml(a.callsign)}</span>
       <span class="meta" style="display:flex;gap:8px;align-items:center">
         <span style="width:6px;height:6px;border-radius:50%;background:${aircraftColor(a)}"></span>
         FL${String(Math.floor(a.alt/100)).padStart(3,'0')}
@@ -2327,9 +2336,11 @@ function renderResolutionHistory() {
   countEl.textContent = resolutionHistory.length;
 
   list.innerHTML = [...resolutionHistory].reverse().map(e => {
-    const flStr = e.movedCs && e.newAlt
-      ? `<span class="res-action">${e.movedCs} → FL${String(Math.floor(e.newAlt / 100)).padStart(3, '0')} (${Math.round(e.newAlt).toLocaleString()} ft)</span>`
-      : '<span class="res-action">separation applied</span>';
+    const flStr = e.actionText
+      ? `<span class="res-action">${escapeHtml(e.movedCs)} → ${escapeHtml(e.actionText)}</span>`
+      : e.movedCs && e.newAlt
+        ? `<span class="res-action">${escapeHtml(e.movedCs)} → FL${String(Math.floor(e.newAlt / 100)).padStart(3, '0')} (${Math.round(e.newAlt).toLocaleString()} ft)</span>`
+        : '<span class="res-action">separation applied</span>';
     const d = new Date(e.ts);
     const hh = String(d.getHours()).padStart(2,'0');
     const mm = String(d.getMinutes()).padStart(2,'0');
@@ -2337,7 +2348,7 @@ function renderResolutionHistory() {
     return `<div class="res-log-entry">` +
       `<span class="res-age">${_fmtResAge(e.ts)}</span>` +
       `<span class="res-ts">${hh}:${mm}:${ss} </span>` +
-      `<span class="res-pair">${e.cs1} ↔ ${e.cs2}</span><br>` +
+      `<span class="res-pair">${escapeHtml(e.cs1)} ↔ ${escapeHtml(e.cs2)}</span><br>` +
       flStr +
       `</div>`;
   }).join('');
@@ -2363,8 +2374,9 @@ function _flushLiveBuffer() {
   for (const d of arr) {
     const status = d.alt > 10000 ? 'cruise' : d.alt > 3000 ? 'climb' : d.alt > 1000 ? 'descent' : 'ground';
     const onGround = d.alt < 50;
-    const existing = liveAircraftMap.get(d.cs);
+    const existing = liveAircraftMap.get(d.id);
     if (existing) {
+      existing.callsign = d.cs;
       existing.lat    = d.lat;
       existing.lon    = d.lon;
       existing.alt    = Math.round(d.alt);
@@ -2374,7 +2386,7 @@ function _flushLiveBuffer() {
       existing.onGround = onGround;
       existing.lastSeen = now;
     } else {
-      liveAircraftMap.set(d.cs, {
+      liveAircraftMap.set(d.id, {
         id: nextAcId++, callsign: d.cs, type: 'B738',
         lon: d.lon, lat: d.lat,
         alt: Math.round(d.alt || 35000),
@@ -2412,37 +2424,39 @@ function renderConflictPanel() {
   countEl.textContent = conflictSet.size;
 
   const activeHtml = Array.from(conflictSet).map(key => {
-    const [cs1, cs2] = key.split('|');
-    return `<div class="conflict-item"><div class="conflict-row"><span class="alert-tag">ALERT</span>${cs1} ↔ ${cs2}</div></div>`;
+    const [cs1, cs2] = JSON.parse(key);
+    return `<div class="conflict-item"><div class="conflict-row"><span class="alert-tag">ALERT</span>${escapeHtml(cs1)} ↔ ${escapeHtml(cs2)}</div></div>`;
   }).join('');
 
   const resolvedHtml = Array.from(resolvedSet.entries()).map(([key, v]) => {
-    const [cs1, cs2] = key.split('|');
-    const resLine = v.movedCs
-      ? `<div class="resolution-detail">↳ ${v.movedCs} → FL${String(Math.floor(v.newAlt/100)).padStart(3,'0')} (${Math.round(v.newAlt).toLocaleString()} ft)</div>`
-      : '';
-    return `<div class="conflict-item resolved-item"><div class="conflict-row"><span class="alert-tag resolved-tag">✓ OK</span>${cs1} ↔ ${cs2}</div>${resLine}</div>`;
+    const [cs1, cs2] = JSON.parse(key);
+    const resLine = v.actionText
+      ? `<div class="resolution-detail">↳ ${escapeHtml(v.movedCs)} → ${escapeHtml(v.actionText)}</div>`
+      : v.movedCs && v.newAlt
+        ? `<div class="resolution-detail">↳ ${escapeHtml(v.movedCs)} → FL${String(Math.floor(v.newAlt/100)).padStart(3,'0')} (${Math.round(v.newAlt).toLocaleString()} ft)</div>`
+        : '';
+    return `<div class="conflict-item resolved-item"><div class="conflict-row"><span class="alert-tag resolved-tag">✓ OK</span>${escapeHtml(cs1)} ↔ ${escapeHtml(cs2)}</div>${resLine}</div>`;
   }).join('');
 
   list.innerHTML = activeHtml + resolvedHtml;
 }
 
 function markConflict(cs1, cs2) {
-  const key = [cs1, cs2].sort().join('|');
+  const key = JSON.stringify([cs1, cs2].sort());
   resolvedSet.delete(key);
   conflictSet.add(key);
   renderConflictPanel();
   setTimeout(() => { conflictSet.delete(key); renderConflictPanel(); }, 15000);
 }
 
-function markResolved(cs1, cs2, movedCs, newAlt) {
-  const key = [cs1, cs2].sort().join('|');
+function markResolved(cs1, cs2, movedCs, newAlt, actionText = '') {
+  const key = JSON.stringify([cs1, cs2].sort());
   conflictSet.delete(key);
   const ts = Date.now();
-  resolvedSet.set(key, { ts, movedCs: movedCs || '', newAlt: newAlt || 0 });
+  resolvedSet.set(key, { ts, movedCs: movedCs || '', newAlt: newAlt || 0, actionText });
 
   // Add to resolution history (cap at 10)
-  resolutionHistory.push({ ts, cs1, cs2, movedCs: movedCs || '', newAlt: +newAlt || 0 });
+  resolutionHistory.push({ ts, cs1, cs2, movedCs: movedCs || '', newAlt: +newAlt || 0, actionText });
   if (resolutionHistory.length > RES_HISTORY_MAX) resolutionHistory.shift();
   renderResolutionHistory();
 
@@ -2457,6 +2471,18 @@ function logATCEvent(message) {
   setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 500); }, 4000);
 }
 
+function setDataStatus(status) {
+  let el = document.getElementById('dataStatusBadge');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'dataStatusBadge';
+    el.style.cssText = 'position:fixed;top:12px;right:16px;background:rgba(20,20,40,.92);color:#fff;font-family:monospace;font-size:11px;padding:7px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.25);z-index:9999';
+    document.body.appendChild(el);
+  }
+  el.textContent = status;
+  el.style.borderColor = status.startsWith('LIVE') ? '#42d392' : status.startsWith('STALE') ? '#f6c85f' : '#ef6b73';
+}
+
 const _baseGetVisible = getVisibleAircraft;
 getVisibleAircraft = function() {
   if (_cachedVisible !== null) return _cachedVisible;
@@ -2469,7 +2495,7 @@ getVisibleAircraft = function() {
 
 function _isInConflict(callsign) {
   for (const key of conflictSet)
-    if (key.split('|').includes(callsign)) return true;
+    if (JSON.parse(key).includes(callsign)) return true;
   return false;
 }
 
@@ -2522,7 +2548,7 @@ draw = function() {
   ctx.lineWidth = 1.5;
   ctx.setLineDash([6, 4]);
   for (const key of conflictSet) {
-    const [cs1, cs2] = key.split('|');
+    const [cs1, cs2] = JSON.parse(key);
     const a1 = byCS.get(cs1), a2 = byCS.get(cs2);
     if (!a1 || !a2) continue;
     const p1 = project(a1.lon, a1.lat), p2 = project(a2.lon, a2.lat);

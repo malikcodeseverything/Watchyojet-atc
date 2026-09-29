@@ -2,17 +2,15 @@ package com.watchyojet;
 
 import javafx.application.Application;
 import javafx.concurrent.Worker;
-import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
-
-import javafx.scene.control.ListView;
 import javafx.stage.Stage;
 
 import java.io.IOException;
 
 public class WYJApp extends Application {
 
+    private WYJAppController controller;
 
     @Override
     public void start(Stage stage) throws IOException {
@@ -23,11 +21,12 @@ public class WYJApp extends Application {
         stage.show();
         System.out.println("Creating Window");
 
-        WYJAppController controller = fxmlLoader.getController();
+        controller = fxmlLoader.getController();
         try { controller.handleThemeChange(); } catch (Exception ignored) {}
         controller.webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
             if (newState == Worker.State.SUCCEEDED) {
-                new Thread(controller.spawnMainThread).start();
+                controller.refreshDataStatus();
+                controller.startEngine();
             }
         });
 
@@ -36,7 +35,7 @@ public class WYJApp extends Application {
     public void stop() {
         System.out.println("Killing Process...");
 
-        System.exit(0);
+        if (controller != null) controller.shutdown();
     }
     public static void main(String[] args) {
         launch();

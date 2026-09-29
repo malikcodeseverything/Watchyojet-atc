@@ -20,8 +20,9 @@ public class ResolutionEngine {
     private static final double PROXIMITY_NM      = 10.0;   // NM radius for altitude slot checks
     private static final double HDG_NEIGHBOR_NM   = 5.0;    // NM radius for heading safety checks
     private static final double HDG_MIN_SEP       = 3.5;    // NM — target separation after turn (above 3 NM threshold)
-    private static final double SPEED_REDUCTION   = 0.80;   // reduce to 80% — enough to shift tCPA materially
-    private static final double MIN_SPEED         = 100;    // kt floor to avoid stall-speed commands
+    private static final double SPEED_REDUCTION   = 0.90;   // conservative 10% reduction
+    private static final double ABSOLUTE_SPEED_FLOOR = 140; // no low-speed commands from inferred types
+    private static final double SPEED_MIN_SEP     = 5.0;    // NM after a proposed speed change
 
     // Thresholds for escalating to aggressive manoeuvres
     private static final double CRITICAL_DCPA     = 0.5;    // NM
@@ -62,18 +63,20 @@ public class ResolutionEngine {
             Resolution r = null;
 
             if (hardPairs.contains(conflictKey(c))) {
-                // bypass cooldown — force separation on whichever aircraft can move
-                r = resolveHard(preferred, other, committed);
-                if (r == null) r = resolveHard(other, preferred, committed);
+                // Bypass cooldown, but never bypass the normal safety checks.
+                r = resolveOne(preferred, other, allAircraft, committed, true);
+                if (r == null) {
+                    r = resolveOne(other, preferred, allAircraft, committed, true);
+                }
             } else {
                 double altDiffNow = Math.abs(getEffectiveAlt(c.getA1(), committed)
                                            - getEffectiveAlt(c.getA2(), committed));
                 boolean critical  = c.getDCPA() < CRITICAL_DCPA && altDiffNow < CRITICAL_ALT_DIFF;
 
-                if (!locked.contains(preferred.getCallsign())) {
+                if (!locked.contains(preferred.getId())) {
                     r = resolveOne(preferred, other, allAircraft, committed, critical);
                 }
-                if (r == null && !locked.contains(other.getCallsign())) {
+                if (r == null && !locked.contains(other.getId())) {
                     r = resolveOne(other, preferred, allAircraft, committed, critical);
                 }
             }
@@ -81,53 +84,17 @@ public class ResolutionEngine {
             if (r != null) {
                 results.add(r);
                 applyToCommitted(r, committed);
-                locked.add(r.getAircraft().getCallsign());
+                locked.add(r.getAircraft().getId());
             }
         }
 
         return results;
     }
 
-    // ── Hard (escalated) resolution ───────────────────────────────────────────
-
-    private Resolution resolveHard(Aircraft moving, Aircraft conflicting,
-                                   Map<String, double[]> committed) {
-        double conflictAlt = getEffectiveAlt(conflicting, committed);
-        double maxAlt      = moving.getType().getMaxAltitude();
-
-        // Try +1000 ft above the conflicting aircraft
-        double upAlt = snapToFL(conflictAlt + ALTITUDE_BUFFER);
-        if (Math.abs(upAlt - conflictAlt) >= ALTITUDE_BUFFER
-                && upAlt <= maxAlt && upAlt >= MIN_ALTITUDE) {
-            System.out.println("[HARD-ALT] " + moving.getCallsign()
-                    + " → " + (int) upAlt + " ft (forced vertical)");
-            return new Resolution(moving, upAlt);
-        }
-
-        // Try -1000 ft below the conflicting aircraft
-        double downAlt = snapToFL(conflictAlt - ALTITUDE_BUFFER);
-        if (Math.abs(downAlt - conflictAlt) >= ALTITUDE_BUFFER && downAlt >= MIN_ALTITUDE) {
-            System.out.println("[HARD-ALT] " + moving.getCallsign()
-                    + " → " + (int) downAlt + " ft (forced vertical)");
-            return new Resolution(moving, downAlt);
-        }
-
-        // Fallback: heading divergence >20° — pick the direction with better separation
-        double currentHdg = getEffectiveHdg(moving, committed);
-        double hdgRight    = (currentHdg + 25 + 360) % 360;
-        double hdgLeft     = (currentHdg - 25 + 360) % 360;
-        double sepRight    = cpaSepWithHdg(moving, hdgRight, conflicting, committed);
-        double sepLeft     = cpaSepWithHdg(moving, hdgLeft,  conflicting, committed);
-        double bestHdg     = sepRight >= sepLeft ? hdgRight : hdgLeft;
-        System.out.println("[HARD-HDG] " + moving.getCallsign()
-                + " → hdg " + (int) bestHdg + "° (forced divergence)");
-        return Resolution.forHeading(moving, bestHdg);
-    }
-
     private static String conflictKey(Conflict c) {
-        String cs1 = c.getA1().getCallsign();
-        String cs2 = c.getA2().getCallsign();
-        return cs1.compareTo(cs2) < 0 ? cs1 + ":" + cs2 : cs2 + ":" + cs1;
+        String id1 = c.getA1().getId();
+        String id2 = c.getA2().getId();
+        return id1.compareTo(id2) < 0 ? id1 + ":" + id2 : id2 + ":" + id1;
     }
 
     // ── Per-aircraft resolution: altitude → heading → speed ───────────────────
@@ -138,14 +105,7 @@ public class ResolutionEngine {
                                    boolean critical) {
         Resolution r = tryAltitude(moving, conflicting, all, committed, critical);
         if (r == null) r = tryHeading(moving, conflicting, all, committed, critical);
-        if (r == null) r = trySpeed(moving, committed);
-        if (r == null) {
-
-    double forcedAlt = snapToFL(getEffectiveAlt(moving, committed) + 2000);
-
-    return new Resolution(moving, forcedAlt);
-
-}
+        if (r == null) r = trySpeed(moving, conflicting, all, committed);
         return r;
     }
 
@@ -222,10 +182,22 @@ public class ResolutionEngine {
      * so that the conflict resolves on its own over the next few cycles.
      * Only issued if the reduced speed stays above the operational floor.
      */
-    private Resolution trySpeed(Aircraft moving, Map<String, double[]> committed) {
+    Resolution trySpeed(Aircraft moving, Aircraft conflicting,
+                        List<Aircraft> all,
+                        Map<String, double[]> committed) {
         double current = getEffectiveSpd(moving, committed);
         double reduced = current * SPEED_REDUCTION;
-        if (reduced < MIN_SPEED) return null;
+        double minimum = Math.max(ABSOLUTE_SPEED_FLOOR,
+                moving.getType().getMinimumSafeSpeed());
+        if (reduced < minimum) return null;
+        if (cpaSepWithSpeed(moving, reduced, conflicting, committed) < SPEED_MIN_SEP) return null;
+
+        for (Aircraft neighbor : all) {
+            if (neighbor == moving || neighbor == conflicting) continue;
+            if (Math.abs(getEffectiveAlt(moving, committed)
+                    - getEffectiveAlt(neighbor, committed)) >= ALTITUDE_BUFFER) continue;
+            if (cpaSepWithSpeed(moving, reduced, neighbor, committed) < SPEED_MIN_SEP) return null;
+        }
         return Resolution.forSpeed(moving, reduced);
     }
 
@@ -295,6 +267,44 @@ public class ResolutionEngine {
         return distanceNM(p1[0], p1[1], p2[0], p2[1]);
     }
 
+    private double cpaSepWithSpeed(Aircraft moving, double newSpeed, Aircraft other,
+                                   Map<String, double[]> committed) {
+        double avgLat = (moving.getLat() + other.getLat()) / 2.0;
+        double cosLat = Math.cos(Math.toRadians(avgLat));
+        double x1 = moving.getLon() * 60.0 * cosLat, y1 = moving.getLat() * 60.0;
+        double x2 = other.getLon() * 60.0 * cosLat, y2 = other.getLat() * 60.0;
+
+        double movingHdg = getEffectiveHdg(moving, committed);
+        double otherHdg = getEffectiveHdg(other, committed);
+        double otherSpeed = getEffectiveSpd(other, committed);
+        double vx1 = newSpeed * Math.sin(Math.toRadians(movingHdg));
+        double vy1 = newSpeed * Math.cos(Math.toRadians(movingHdg));
+        double vx2 = otherSpeed * Math.sin(Math.toRadians(otherHdg));
+        double vy2 = otherSpeed * Math.cos(Math.toRadians(otherHdg));
+        double dvx = vx2 - vx1, dvy = vy2 - vy1;
+        double dx = x2 - x1, dy = y2 - y1;
+        double dv2 = dvx * dvx + dvy * dvy;
+        double currentDist = Math.sqrt(dx * dx + dy * dy);
+        if (dv2 == 0) return currentDist;
+
+        double tHours = -(dx * dvx + dy * dvy) / dv2;
+        if (tHours <= 0) return currentDist;
+        double seconds = tHours * 3600.0;
+        double[] p1 = predictPositionWithSpeed(moving, seconds, newSpeed, movingHdg);
+        double[] p2 = predictPositionWithSpeed(other, seconds, otherSpeed, otherHdg);
+        return distanceNM(p1[0], p1[1], p2[0], p2[1]);
+    }
+
+    private double[] predictPositionWithSpeed(Aircraft aircraft, double seconds,
+                                               double speed, double headingDeg) {
+        double heading = Math.toRadians(headingDeg);
+        double distanceNm = speed * seconds / 3600.0;
+        double dLat = distanceNm * Math.cos(heading) / 60.0;
+        double dLon = distanceNm * Math.sin(heading)
+                / (60.0 * Math.cos(Math.toRadians(aircraft.getLat())));
+        return new double[]{aircraft.getLat() + dLat, aircraft.getLon() + dLon};
+    }
+
     // ── Search bounds ─────────────────────────────────────────────────────────
 
     private double[] getSearchBounds(Aircraft a, double effectiveAlt) {
@@ -330,17 +340,17 @@ public class ResolutionEngine {
     // ── Committed state helpers ───────────────────────────────────────────────
 
     private double getEffectiveAlt(Aircraft a, Map<String, double[]> committed) {
-        double[] s = committed.get(a.getCallsign());
+        double[] s = committed.get(a.getId());
         return (s != null && !Double.isNaN(s[0])) ? s[0] : a.getAltitude();
     }
 
     private double getEffectiveHdg(Aircraft a, Map<String, double[]> committed) {
-        double[] s = committed.get(a.getCallsign());
+        double[] s = committed.get(a.getId());
         return (s != null && !Double.isNaN(s[1])) ? s[1] : a.getHeading();
     }
 
     private double getEffectiveSpd(Aircraft a, Map<String, double[]> committed) {
-        double[] s = committed.get(a.getCallsign());
+        double[] s = committed.get(a.getId());
         return (s != null && !Double.isNaN(s[2])) ? s[2] : a.getSpeed();
     }
 
@@ -350,8 +360,8 @@ public class ResolutionEngine {
      * Uses NaN as a sentinel for "this dimension was not changed."
      */
     private void applyToCommitted(Resolution r, Map<String, double[]> committed) {
-        String cs = r.getAircraft().getCallsign();
-        double[] s = committed.computeIfAbsent(cs,
+        String aircraftId = r.getAircraft().getId();
+        double[] s = committed.computeIfAbsent(aircraftId,
                 k -> new double[]{Double.NaN, Double.NaN, Double.NaN});
         if      (r.isSpeedResolution())   s[2] = r.getNewSpeed();
         else if (r.isHeadingResolution()) s[1] = r.getNewHeading();
