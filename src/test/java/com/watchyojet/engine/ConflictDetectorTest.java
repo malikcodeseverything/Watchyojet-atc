@@ -104,4 +104,15 @@ public class ConflictDetectorTest {
 
         assertEquals(0, conflicts.size());
     }
+
+    @Test
+    void shouldReserveCriticalRiskForImminentCollisionGeometry() {
+        Aircraft a1 = new Aircraft("A1", 40.0, -75.0, 5_000, 500, 90, AircraftType.A320);
+        Aircraft a2 = new Aircraft("A2", 40.0, -74.7, 5_000, 500, 270, AircraftType.A320);
+
+        List<Conflict> conflicts = new ConflictDetector().detectConflicts(List.of(a1, a2));
+
+        assertEquals(1, conflicts.size());
+        assertTrue(conflicts.get(0).isCriticalRisk());
+    }
 }

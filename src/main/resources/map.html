@@ -636,7 +636,7 @@
         <div class="value" id="statGround">0</div>
       </div>
       <div class="stat-card">
-        <div class="label">Alerts</div>
+        <div class="label">Monitored</div>
         <div class="value" id="statAlerts">0</div>
       </div>
       <div class="stat-card accent">
@@ -667,7 +667,7 @@
 
 <aside class="right-panel">
   <div class="panel-section" id="conflictPanelSection" style="display:none">
-    <div class="panel-title" style="color:var(--danger)">UNRESOLVED ADVISORIES <span class="count" id="conflictCount">0</span></div>
+    <div class="panel-title" style="color:var(--danger)">CRITICAL ALERTS <span class="count" id="conflictCount">0</span></div>
     <div id="conflictList"></div>
   </div>
   <div class="panel-section" id="resLogSection" style="display:none">
@@ -2071,6 +2071,8 @@ function draw() {
 
 }
 
+let monitoredProximityCount = 0;
+
 function _updateStats() {
   const visible = getVisibleAircraft();
   document.getElementById('visibleCount').textContent = visible.length;
@@ -2078,7 +2080,7 @@ function _updateStats() {
   document.getElementById('statTracked').textContent = visible.length;
   document.getElementById('statAirborne').textContent = visible.filter(a => !a.onGround && a.status !== "ground").length;
   document.getElementById('statGround').textContent = visible.filter(a => a.onGround || a.status === "ground").length;
-  document.getElementById('statAlerts').textContent = visible.filter(a => a.status === "emergency").length;
+  document.getElementById('statAlerts').textContent = monitoredProximityCount;
   const sel = state.aircraft.find(a => a.id === state.selectedAircraftId);
   document.getElementById('selectedLabel').textContent = sel ? sel.callsign : "—";
 }
@@ -2498,6 +2500,18 @@ function markConflict(cs1, cs2) {
   conflictSet.add(key);
   renderConflictPanel();
   setTimeout(() => { conflictSet.delete(key); renderConflictPanel(); }, 15000);
+}
+
+function replaceCriticalAlerts(monitoredCount, pairs) {
+  monitoredProximityCount = Math.max(0, monitoredCount || 0);
+  conflictSet.clear();
+  for (const pair of pairs || []) {
+    if (!Array.isArray(pair) || pair.length < 2) continue;
+    conflictSet.add(JSON.stringify([String(pair[0]), String(pair[1])].sort()));
+  }
+  const monitored = document.getElementById('statAlerts');
+  if (monitored) monitored.textContent = String(monitoredProximityCount);
+  renderConflictPanel();
 }
 
 function markResolved(cs1, cs2, movedCs, newAlt, actionText = '') {

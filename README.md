@@ -24,6 +24,10 @@ point of approach (CPA) prediction, and an interactive JavaFX/WebView display.
   geometry.
 - Projects reported climb/descent rates for up to three minutes when evaluating
   vertical separation and rejects stale state vectors older than 20 seconds.
+- Keeps live OpenSky traffic strictly observational: broad separation-standard
+  predictions are counted as monitored proximity advisories, while red alerts
+  require a CPA within 60 seconds, 1 NM, and 500 ft. Automated maneuvering is
+  available only in deterministic demo mode.
 - Groups related conflicts before proposing altitude, heading, or speed changes.
 - Refuses to invent a maneuver when no candidate passes the safety checks.
 - Displays live aircraft, conflicts, resolutions, and an event history.

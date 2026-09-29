@@ -39,10 +39,29 @@ public class ATCEngine {
     }
 
     public void runCycle(List<Aircraft> aircrafts) {
+        runCycle(aircrafts, true);
+    }
 
-        movement.updatePositions(aircrafts);
+    public void runCycle(List<Aircraft> aircrafts, boolean simulationEnabled) {
 
-        List<Conflict> conflicts = detector.detectConflicts(aircrafts);
+        if (simulationEnabled) movement.updatePositions(aircrafts);
+
+        List<Conflict> conflicts = detector.detectConflicts(aircrafts, simulationEnabled);
+
+        if (!simulationEnabled) {
+            List<String[]> criticalPairs = conflicts.stream()
+                    .filter(Conflict::isCriticalRisk)
+                    .map(c -> new String[]{c.getA1().getCallsign(), c.getA2().getCallsign()})
+                    .toList();
+            int monitoredProximities = conflicts.size() - criticalPairs.size();
+            WYJAppController controller = WYJAppController.getInstance();
+            if (controller != null) {
+                controller.updateLiveAssessment(monitoredProximities, criticalPairs);
+            }
+            conflictPersistence.clear();
+            updateMap(aircrafts);
+            return;
+        }
 
         if (conflicts.isEmpty()) {
             conflictPersistence.clear();

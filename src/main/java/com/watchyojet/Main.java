@@ -84,7 +84,9 @@ public class Main {
             }
 
             try {
-                engine.runCycle(manager.getAircrafts());
+                // Real OpenSky traffic is observation-only. Resolution and
+                // synthetic movement are enabled exclusively for demo traffic.
+                engine.runCycle(manager.getAircrafts(), DEMO_MODE || fallbackDemoLoaded);
                 if (currentStatus != null && currentStatus.startsWith("ERROR")
                         && nominalStatus != null) {
                     currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);

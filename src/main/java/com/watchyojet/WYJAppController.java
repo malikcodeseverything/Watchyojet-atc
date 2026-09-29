@@ -208,6 +208,27 @@ public class WYJAppController {
         });
     }
 
+    public void updateLiveAssessment(int monitoredProximities, List<String[]> criticalPairs) {
+        final String pairsJson;
+        try {
+            pairsJson = JSON.writeValueAsString(criticalPairs);
+        } catch (JsonProcessingException e) {
+            log("Unable to encode traffic assessment: " + e.getMessage());
+            return;
+        }
+        Platform.runLater(() -> {
+            try {
+                Object check = webEngine.executeScript("typeof replaceCriticalAlerts !== 'undefined'");
+                if (check.equals(true)) {
+                    webEngine.executeScript("replaceCriticalAlerts("
+                            + monitoredProximities + "," + pairsJson + ")");
+                }
+            } catch (RuntimeException e) {
+                reportWebError("traffic assessment", e);
+            }
+        });
+    }
+
     public void logToMap(String message) {
         Platform.runLater(() -> {
             try {
