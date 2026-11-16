@@ -29,9 +29,10 @@ public class AircraftManager {
                 existing.setSpeed(live.getSpeed());
                 existing.setCallsign(live.getCallsign());
                 existing.setType(live.getType());
-                // Shadow-mode resolutions are hypothetical. A fresh observation must
-                // restore the real reported altitude instead of drifting from reality.
+                // A fresh observation replaces the coasted state with what OpenSky reports.
                 existing.setAltitude(live.getAltitude());
+                existing.setVerticalRate(live.getVerticalRate());
+                existing.setSquawk(live.getSquawk());
                 updatedMap.put(aircraftId, existing);
 
             } else {

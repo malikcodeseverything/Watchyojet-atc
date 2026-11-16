@@ -24,7 +24,7 @@ class ATCEngineTest {
 
     @Test
     void rejectsATrialThatTradesOneConflictForAnother() {
-        var original = new ConflictDetector().detectConflicts(aircraft, false);
+        var original = new ConflictDetector().detectConflicts(aircraft);
         assertEquals(1, original.size());
 
         var trial = new ATCEngine().validateTrial(aircraft, original,
@@ -36,7 +36,7 @@ class ATCEngineTest {
 
     @Test
     void evaluatesAClearTrialWithoutChangingTheInputTracks() {
-        var original = new ConflictDetector().detectConflicts(aircraft, false);
+        var original = new ConflictDetector().detectConflicts(aircraft);
 
         var trial = new ATCEngine().validateTrial(aircraft, original,
                 Map.of(moving.getId(), new double[]{32_000, Double.NaN, Double.NaN}));
@@ -49,11 +49,11 @@ class ATCEngineTest {
     void appliesTheAcceptedManeuversInTheScriptedDemo() {
         var tracks = DemoScenario.build();
         var detector = new ConflictDetector();
-        assertEquals(3, detector.detectConflicts(tracks, false).size());
+        assertEquals(3, detector.detectConflicts(tracks).size());
 
         CycleReport report = new ATCEngine().runCycle(tracks);
 
-        assertTrue(detector.detectConflicts(tracks, false).isEmpty());
+        assertTrue(detector.detectConflicts(tracks).isEmpty());
         assertEquals(3, report.cleared().size());
         assertTrue(report.cleared().stream().allMatch(CycleReport.ClearedAlert::clearedByManeuver));
     }
@@ -65,11 +65,11 @@ class ATCEngineTest {
         var detector = new ConflictDetector();
 
         CycleReport preview = engine.runCycle(tracks, CycleMode.DETECT_ONLY);
-        assertEquals(3, detector.detectConflicts(tracks, false).size());
+        assertEquals(3, detector.detectConflicts(tracks).size());
         assertTrue(preview.active().stream().allMatch(a -> a.advice() == Advice.NOT_EVALUATED));
 
         engine.runCycle(tracks);
-        assertTrue(detector.detectConflicts(tracks, false).isEmpty());
+        assertTrue(detector.detectConflicts(tracks).isEmpty());
     }
 
     @Test
@@ -84,7 +84,7 @@ class ATCEngineTest {
             assertEquals(before[i][1], tracks.get(i).getHeading());
             assertEquals(before[i][2], tracks.get(i).getSpeed());
         }
-        assertEquals(3, new ConflictDetector().detectConflicts(tracks, false).size());
+        assertEquals(3, new ConflictDetector().detectConflicts(tracks).size());
         assertEquals(3, report.active().size());
         assertTrue(report.cleared().isEmpty());
         for (ActiveAlert alert : report.active()) {
@@ -160,6 +160,55 @@ class ATCEngineTest {
                 Instructions.describe(com.watchyojet.model.Resolution.forHeading(jet, 120)));
         assertEquals("DAL123 reduce speed to 252 knots",
                 Instructions.describe(com.watchyojet.model.Resolution.forSpeed(jet, 252)));
+    }
+
+    @Test
+    void reportsVfrProximityAsTrafficInsteadOfResolvingIt() {
+        var tracks = DemoScenario.build();
+        tracks.get(4).setSquawk("1200");   // DEMO05
+
+        CycleReport report = new ATCEngine().runCycle(tracks, CycleMode.ADVISE);
+
+        assertEquals(1, report.counters().trafficAdvisories());
+        assertEquals(2, report.active().size());
+        assertTrue(report.active().stream().noneMatch(a -> a.pairKey().contains("DEMO05")));
+        // The VFR pair must not make every trial look like it created a new conflict.
+        assertEquals(2, report.counters().acceptedGroups());
+        assertEquals(0, report.counters().rejectedGroups());
+        assertTrue(report.active().stream().allMatch(a -> a.advice() == Advice.CLEARS_IN_SIMULATION));
+    }
+
+    @Test
+    void holdsAnAlertUntilThePairClearsByAMargin() {
+        Aircraft north = new Aircraft("N1", 40.00, -75.00, 30_000, 300, 0, AircraftType.B737);
+        Aircraft south = new Aircraft("S1", 40.20, -75.00, 30_500, 300, 180, AircraftType.B737);
+        List<Aircraft> tracks = List.of(north, south);
+        var engine = new ATCEngine();
+        engine.runCycle(tracks, CycleMode.ADVISE, 0);
+
+        south.setAltitude(31_100);   // legally separated, but inside the 200 ft hold margin
+        CycleReport hovering = engine.runCycle(tracks, CycleMode.ADVISE, 2_000);
+        assertEquals(1, hovering.active().size());
+        assertEquals(Advice.CLEARING, hovering.active().get(0).advice());
+        assertEquals(0, hovering.active().get(0).firstSeenMillis());
+        assertTrue(hovering.cleared().isEmpty());
+
+        south.setAltitude(31_300);
+        CycleReport separated = engine.runCycle(tracks, CycleMode.ADVISE, 4_000);
+        assertTrue(separated.active().isEmpty());
+        assertEquals(1, separated.cleared().size());
+    }
+
+    @Test
+    void neverMovesAnAircraftSquawkingEmergency() {
+        Aircraft mayday = new Aircraft("MAYDAY", 40.00, -75.00, 30_000, 300, 0, AircraftType.B737);
+        Aircraft other = new Aircraft("OTHER", 40.20, -75.00, 30_500, 300, 180, AircraftType.B737);
+        mayday.setSquawk("7700");
+
+        CycleReport report = new ATCEngine().runCycle(List.of(mayday, other), CycleMode.ADVISE);
+
+        assertEquals(1, report.active().size());
+        assertTrue(report.active().get(0).instruction().startsWith("OTHER "));
     }
 
     private static Advice adviceFor(CycleReport report, String id1, String id2) {

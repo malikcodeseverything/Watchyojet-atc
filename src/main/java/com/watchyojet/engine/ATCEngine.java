@@ -80,7 +80,13 @@ public class ATCEngine {
     CycleReport runCycle(List<Aircraft> aircraft, CycleMode mode, long now) {
         movement.updatePositions(aircraft);
 
-        List<Conflict> conflicts = new ArrayList<>(detector.detectConflicts(aircraft, false));
+        // VFR traffic (squawk 1200) gets traffic information from ATC, not separation.
+        List<Conflict> conflicts = new ArrayList<>();
+        int trafficAdvisories = 0;
+        for (Conflict conflict : detector.detectConflicts(aircraft)) {
+            if (isTrafficAdvisory(conflict)) trafficAdvisories++;
+            else conflicts.add(conflict);
+        }
         conflicts.sort(Comparator.comparing(Conflict::getSeverity)
                 .thenComparingDouble(Conflict::getTCPA));
 
@@ -88,15 +94,25 @@ public class ATCEngine {
         Map<String, Conflict> byKey = new LinkedHashMap<>();
         for (Conflict conflict : conflicts) byKey.putIfAbsent(conflictKey(conflict), conflict);
 
+        Map<String, Aircraft> byId = new HashMap<>();
+        for (Aircraft track : aircraft) byId.put(track.getId(), track);
+
+        // An alert that drops below the threshold is held until the pair clears it by a margin,
+        // so a pair hovering at the limit does not flicker between new and cleared.
         List<ClearedAlert> cleared = new ArrayList<>();
+        Map<String, Conflict> held = new LinkedHashMap<>();
         for (Map.Entry<String, TrackedAlert> entry : tracked.entrySet()) {
-            if (!byKey.containsKey(entry.getKey())) {
-                TrackedAlert gone = entry.getValue();
+            if (byKey.containsKey(entry.getKey())) continue;
+            TrackedAlert gone = entry.getValue();
+            Optional<Conflict> stillClose = holdingConflict(byId.get(gone.id1()), byId.get(gone.id2()));
+            if (stillClose.isPresent()) {
+                held.put(entry.getKey(), stillClose.get());
+            } else {
                 cleared.add(new ClearedAlert(entry.getKey(), gone.id1(), gone.id2(),
                         gone.callsign1(), gone.callsign2(), ""));
             }
         }
-        tracked.keySet().retainAll(byKey.keySet());
+        tracked.keySet().removeIf(key -> !byKey.containsKey(key) && !held.containsKey(key));
 
         int newAlerts = 0;
         for (Map.Entry<String, Conflict> entry : byKey.entrySet()) {
@@ -119,8 +135,10 @@ public class ATCEngine {
                 active.add(new ActiveAlert(entry.getKey(), entry.getValue(),
                         tracked.get(entry.getKey()).firstSeenMillis(), Advice.NOT_EVALUATED, ""));
             }
+            addHeld(active, held);
             Counters counters = new Counters(active.size(), newAlerts, cleared.size(),
-                    0, 0, 0, 0, 0, 0);
+                    0, 0, 0, 0, 0, 0, 0, held.size(), trafficAdvisories);
+            if (mode != CycleMode.DETECT_ONLY) logCycle(mode, counters);
             return publish(new CycleReport(mode, active, cleared, counters), aircraft);
         }
 
@@ -193,6 +211,7 @@ public class ATCEngine {
         List<ActiveAlert> active = new ArrayList<>();
         int pairsClearedInTrial = 0;
         int noSafeManeuver = 0;
+        int separationLost = 0;
         for (Map.Entry<String, Conflict> entry : byKey.entrySet()) {
             String key = entry.getKey();
             Conflict conflict = entry.getValue();
@@ -217,6 +236,10 @@ public class ATCEngine {
             } else if (clearsInTrial) {
                 advice = Advice.CLEARS_IN_SIMULATION;
                 instruction = instructionFor(acceptedByAircraft, instructionByAircraft, id1, id2);
+            } else if (SeparationStandards.insideMinimaNow(conflict.getA1(), conflict.getA2())) {
+                advice = Advice.SEPARATION_LOST;
+                instruction = instructionFor(acceptedByAircraft, instructionByAircraft, id1, id2);
+                separationLost++;
             } else if (groupsWithoutProposal.contains(key)
                     && cooling.contains(id1) && cooling.contains(id2)) {
                 advice = Advice.MANEUVER_IN_PROGRESS;
@@ -234,8 +257,10 @@ public class ATCEngine {
                     advice, instruction));
         }
 
+        addHeld(active, held);
         Counters counters = new Counters(active.size(), newAlerts, cleared.size(), groups,
-                proposals, acceptedGroups, rejectedGroups, pairsClearedInTrial, noSafeManeuver);
+                proposals, acceptedGroups, rejectedGroups, pairsClearedInTrial, noSafeManeuver,
+                separationLost, held.size(), trafficAdvisories);
         logCycle(mode, counters);
         return publish(new CycleReport(mode, active, cleared, counters), aircraft);
     }
@@ -255,15 +280,19 @@ public class ATCEngine {
                 trialAircraft.add(track);
                 continue;
             }
-            Aircraft trial = new Aircraft(track.getId(), track.getCallsign(), track.getLat(),
-                    track.getLon(), track.getAltitude(), track.getSpeed(), track.getHeading(), track.getType());
+            Aircraft trial = track.copy();
             applyTrialState(trial, changes);
             trialAircraft.add(trial);
         }
 
         Set<String> originalPairs = new HashSet<>();
         for (Conflict conflict : originalConflicts) originalPairs.add(conflictKey(conflict));
-        List<Conflict> predicted = detector.detectConflicts(trialAircraft, false);
+        // Compare like with like: VFR proximity is excluded from the original list, so it is
+        // excluded here too. Otherwise every trial would look like it created a new conflict.
+        List<Conflict> predicted = new ArrayList<>();
+        for (Conflict conflict : detector.detectConflicts(trialAircraft)) {
+            if (!isTrafficAdvisory(conflict)) predicted.add(conflict);
+        }
         for (Conflict conflict : predicted) {
             if (!originalPairs.contains(conflictKey(conflict))) return Optional.empty();
         }
@@ -288,8 +317,30 @@ public class ATCEngine {
         return copy;
     }
 
+    /** VFR traffic (squawk 1200) gets traffic information from ATC, not separation. */
+    private static boolean isTrafficAdvisory(Conflict conflict) {
+        return conflict.getA1().isVfr() || conflict.getA2().isVfr();
+    }
+
+    private Optional<Conflict> holdingConflict(Aircraft a1, Aircraft a2) {
+        if (a1 == null || a2 == null || a1.isVfr() || a2.isVfr()) return Optional.empty();
+        return detector.evaluate(a1, a2, SeparationStandards.HOLD_LATERAL_MARGIN_NM,
+                SeparationStandards.HOLD_VERTICAL_MARGIN_FT);
+    }
+
+    private void addHeld(List<ActiveAlert> active, Map<String, Conflict> held) {
+        for (Map.Entry<String, Conflict> entry : held.entrySet()) {
+            active.add(new ActiveAlert(entry.getKey(), entry.getValue(),
+                    tracked.get(entry.getKey()).firstSeenMillis(), Advice.CLEARING, ""));
+        }
+    }
+
+    /** An assigned altitude is held level, so a climb or descent in progress stops in the trial. */
     private static void applyTrialState(Aircraft aircraft, double[] state) {
-        if (!Double.isNaN(state[0])) aircraft.setAltitude(state[0]);
+        if (!Double.isNaN(state[0])) {
+            aircraft.setAltitude(state[0]);
+            aircraft.setVerticalRate(0);
+        }
         if (!Double.isNaN(state[1])) aircraft.setHeading(state[1]);
         if (!Double.isNaN(state[2])) aircraft.setSpeed(state[2]);
     }
@@ -301,10 +352,12 @@ public class ATCEngine {
     }
 
     private static void logCycle(CycleMode mode, Counters c) {
-        System.out.printf("[CYCLE] %s alerts=%d new=%d cleared=%d groups=%d proposals=%d"
-                        + " accepted=%d rejected=%d clearInTrial=%d noSafeManeuver=%d%n",
-                mode, c.alerts(), c.newAlerts(), c.clearedAlerts(), c.groups(), c.proposals(),
-                c.acceptedGroups(), c.rejectedGroups(), c.pairsClearedInTrial(), c.noSafeManeuver());
+        System.out.printf("[CYCLE] %s alerts=%d new=%d cleared=%d clearing=%d groups=%d"
+                        + " proposals=%d accepted=%d rejected=%d clearInTrial=%d noSafeManeuver=%d"
+                        + " separationLost=%d vfrTraffic=%d%n",
+                mode, c.alerts(), c.newAlerts(), c.clearedAlerts(), c.clearing(), c.groups(),
+                c.proposals(), c.acceptedGroups(), c.rejectedGroups(), c.pairsClearedInTrial(),
+                c.noSafeManeuver(), c.separationLost(), c.trafficAdvisories());
     }
 
     // ── Conflict key ─────────────────────────────────────────────────────────

@@ -138,11 +138,28 @@ public class OpenSkyFetcher {
                 continue;
             }
 
-            aircraft.add(new Aircraft(icao24, callsign, lat, lon, altitudeFeet, speedKnots,
-                    track, inferType(speedKnots, altitudeFeet)));
+            Aircraft observed = new Aircraft(icao24, callsign, lat, lon, altitudeFeet, speedKnots,
+                    track, inferType(speedKnots, altitudeFeet));
+            observed.setVerticalRate(verticalRateFeetPerMinute(state.path(11)));
+            observed.setSquawk(squawk(state.path(14)));
+            aircraft.add(observed);
         }
 
         return new FetchResult(true, aircraft, "Fetched " + aircraft.size() + " aircraft");
+    }
+
+    /** OpenSky reports vertical rate in m/s; implausible or missing values count as level. */
+    static double verticalRateFeetPerMinute(JsonNode value) {
+        double feetPerMinute = numericValue(value) * 196.85;
+        if (!Double.isFinite(feetPerMinute) || Math.abs(feetPerMinute) > 8_000) return 0;
+        return feetPerMinute;
+    }
+
+    /** A four-digit octal transponder code, or null when absent or malformed. */
+    static String squawk(JsonNode value) {
+        if (value == null || !value.isTextual()) return null;
+        String code = value.textValue().trim();
+        return code.matches("[0-7]{4}") ? code : null;
     }
 
     private static double numericValue(JsonNode value) {

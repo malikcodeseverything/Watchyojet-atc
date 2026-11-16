@@ -46,8 +46,12 @@ Movement → closest point of approach → maneuver search → conflict recheck
 JavaFX controller → WebView traffic display
 ```
 
-The simulator uses a 5 NM horizontal and 1,000 ft vertical alert threshold,
-with a lookahead of up to ten minutes. Each group of related conflicts gets
+The simulator uses 3 NM laterally in the terminal area around PHL (below
+FL180, within 40 NM) and 5 NM elsewhere, with 1,000 ft vertically. It
+predicts with each aircraft's climb or descent rate, looks 2 minutes ahead in
+the terminal area and 5 minutes elsewhere, treats VFR traffic (code 1200) as
+traffic advisories rather than conflicts, and never moves an aircraft
+squawking an emergency code. Each group of related conflicts gets
 its own trial: proposed maneuvers are tested on copies of the tracks, and a
 group is rejected only if its maneuvers create a new predicted conflict.
 

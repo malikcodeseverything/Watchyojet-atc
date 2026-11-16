@@ -2,110 +2,114 @@ package com.watchyojet.engine;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import com.watchyojet.model.Aircraft;
 import com.watchyojet.model.Conflict;
 
+/**
+ * Predicts losses of separation between pairs of aircraft.
+ *
+ * <p>Each aircraft is projected along a straight line at constant ground speed, track and
+ * vertical rate. A pair is in conflict when the time window in which it is inside the lateral
+ * minimum overlaps the window in which it is inside the vertical minimum, within the lookahead.
+ * Using both windows means a climbing aircraft is flagged only if it actually reaches the other
+ * aircraft's level while they are laterally close.
+ */
 public class ConflictDetector {
 
-    static final double MIN_DISTANCE = 5.0;
-    private static final double MAX_LOOKAHEAD_SECONDS = 600.0;
-
-    public List<Conflict> detectConflicts(List<Aircraft> aircrafts) {
-        return detectConflicts(aircrafts, true);
-    }
-
-    List<Conflict> detectConflicts(List<Aircraft> aircrafts, boolean logConflicts) {
-
+    public List<Conflict> detectConflicts(List<Aircraft> aircraft) {
         List<Conflict> conflicts = new ArrayList<>();
-
-        for (int i = 0; i < aircrafts.size(); i++) {
-            for (int j = i + 1; j < aircrafts.size(); j++) {
-
-                Aircraft a1 = aircrafts.get(i);
-                Aircraft a2 = aircrafts.get(j);
-
-                double altitudeDiff = Math.abs(
-                        Math.round(a1.getAltitude()) - Math.round(a2.getAltitude()));
-
-                // Parallel and diverging tracks are closest at the start of the prediction.
-                double tCPA = Math.max(0, timeToCPA(a1, a2));
-
-                if (tCPA >= MAX_LOOKAHEAD_SECONDS) continue;
-
-                double cpaDistance = distanceAtCPA(a1, a2, tCPA);
-
-                if (cpaDistance < MIN_DISTANCE && altitudeDiff < 1000) {
-
-                    String sevStr = classifySeverity(cpaDistance, altitudeDiff);
-                    Conflict.Severity severity = switch (sevStr) {
-                        case "CRITICAL" -> Conflict.Severity.CRITICAL;
-                        case "HIGH"     -> Conflict.Severity.HIGH;
-                        default         -> Conflict.Severity.MEDIUM;
-                    };
-
-                    conflicts.add(new Conflict(a1, a2, severity, tCPA, cpaDistance));
-
-                    if (logConflicts) {
-                        System.out.println("\n[CONFLICT DETECTED]");
-                        System.out.println(a1.getCallsign() + " ↔ " + a2.getCallsign());
-                        System.out.println("→ tCPA: " + String.format("%.0f", tCPA) + " sec");
-                        System.out.println("→ dCPA: " + String.format("%.2f", cpaDistance) + " NM");
-                        System.out.println("→ Altitude diff: " + String.format("%.0f", altitudeDiff) + " ft");
-                        System.out.println("→ Severity: " + sevStr);
-                    }
-                }
+        for (int i = 0; i < aircraft.size(); i++) {
+            for (int j = i + 1; j < aircraft.size(); j++) {
+                evaluate(aircraft.get(i), aircraft.get(j), 0, 0).ifPresent(conflicts::add);
             }
         }
-
         return conflicts;
     }
 
-    private double timeToCPA(Aircraft a1, Aircraft a2) {
+    /**
+     * Evaluates one pair. The margins widen the minima, which is how an active alert is held
+     * until the pair is clearly separated instead of flickering at the threshold.
+     */
+    public Optional<Conflict> evaluate(Aircraft a1, Aircraft a2,
+                                       double lateralMarginNm, double verticalMarginFt) {
+        double lateral = SeparationStandards.lateralMinimumNm(a1, a2) + lateralMarginNm;
+        double vertical = SeparationStandards.VERTICAL_FT + verticalMarginFt;
+        double horizon = SeparationStandards.lookaheadSeconds(a1, a2);
 
-        double avgLat = (a1.getLat() + a2.getLat()) / 2.0;
-        double cosLat = Math.cos(Math.toRadians(avgLat));
+        // Relative position (NM) and velocity (NM per second) on a local flat projection.
+        double cosLat = Math.cos(Math.toRadians((a1.getLat() + a2.getLat()) / 2.0));
+        double dx = (a2.getLon() - a1.getLon()) * 60.0 * cosLat;
+        double dy = (a2.getLat() - a1.getLat()) * 60.0;
+        double dvx = (velocityX(a2) - velocityX(a1)) / 3600.0;
+        double dvy = (velocityY(a2) - velocityY(a1)) / 3600.0;
 
-        double x1 = a1.getLon() * 60.0 * cosLat;
-        double y1 = a1.getLat() * 60.0;
-        double x2 = a2.getLon() * 60.0 * cosLat;
-        double y2 = a2.getLat() * 60.0;
+        // Lateral window: |d + v t| < lateral, a quadratic in t.
+        double qa = dvx * dvx + dvy * dvy;
+        double qb = 2 * (dx * dvx + dy * dvy);
+        double qc = dx * dx + dy * dy - lateral * lateral;
+        double lateralStart;
+        double lateralEnd;
+        if (qa < 1e-12) {
+            if (qc >= 0) return Optional.empty();
+            lateralStart = 0;
+            lateralEnd = horizon;
+        } else {
+            double discriminant = qb * qb - 4 * qa * qc;
+            if (discriminant <= 0) return Optional.empty();
+            double root = Math.sqrt(discriminant);
+            lateralStart = Math.max(0, (-qb - root) / (2 * qa));
+            lateralEnd = Math.min(horizon, (-qb + root) / (2 * qa));
+        }
+        if (lateralStart >= lateralEnd) return Optional.empty();
 
-        double vx1 = a1.getSpeed() * Math.sin(Math.toRadians(a1.getHeading()));
-        double vy1 = a1.getSpeed() * Math.cos(Math.toRadians(a1.getHeading()));
-        double vx2 = a2.getSpeed() * Math.sin(Math.toRadians(a2.getHeading()));
-        double vy2 = a2.getSpeed() * Math.cos(Math.toRadians(a2.getHeading()));
+        // Vertical window: |dh + dvr t| < vertical, linear in t.
+        double dh = a2.getAltitude() - a1.getAltitude();
+        double dvr = (a2.getVerticalRate() - a1.getVerticalRate()) / 60.0;
+        double verticalStart;
+        double verticalEnd;
+        if (Math.abs(dvr) < 1e-9) {
+            if (Math.abs(dh) >= vertical) return Optional.empty();
+            verticalStart = Double.NEGATIVE_INFINITY;
+            verticalEnd = Double.POSITIVE_INFINITY;
+        } else {
+            double t1 = (-vertical - dh) / dvr;
+            double t2 = (vertical - dh) / dvr;
+            verticalStart = Math.min(t1, t2);
+            verticalEnd = Math.max(t1, t2);
+        }
 
-        double dvx = vx2 - vx1;
-        double dvy = vy2 - vy1;
-        double dx  = x2 - x1;
-        double dy  = y2 - y1;
+        double start = Math.max(lateralStart, verticalStart);
+        double end = Math.min(lateralEnd, verticalEnd);
+        if (start >= end) return Optional.empty();
 
-        double dv2 = dvx * dvx + dvy * dvy;
-        if (dv2 == 0) return -1;
+        // Report the closest lateral approach inside the window where both minima are infringed.
+        double closest = qa < 1e-12 ? start : clamp(-qb / (2 * qa), start, end);
+        double px = dx + dvx * closest;
+        double py = dy + dvy * closest;
+        double distance = Math.sqrt(px * px + py * py);
+        double altitudeDiff = Math.abs(dh + dvr * closest);
 
-        double tHours = -(dx * dvx + dy * dvy) / dv2;
-        return tHours * 3600.0;
+        return Optional.of(new Conflict(a1, a2, classifySeverity(distance, altitudeDiff),
+                closest, distance));
     }
 
-    private double distanceAtCPA(Aircraft a1, Aircraft a2, double tCPA) {
-
-        double[] p1 = TrajectoryPredictor.predictPosition(a1, tCPA);
-        double[] p2 = TrajectoryPredictor.predictPosition(a2, tCPA);
-
-        return distanceNM(p1[0], p1[1], p2[0], p2[1]);
+    private static double velocityX(Aircraft a) {
+        return a.getSpeed() * Math.sin(Math.toRadians(a.getHeading()));
     }
 
-    private double distanceNM(double lat1, double lon1, double lat2, double lon2) {
-        double avgLat = (lat1 + lat2) / 2.0;
-        double dLat = (lat2 - lat1) * 60.0;
-        double dLon = (lon2 - lon1) * 60.0 * Math.cos(Math.toRadians(avgLat));
-        return Math.sqrt(dLat * dLat + dLon * dLon);
+    private static double velocityY(Aircraft a) {
+        return a.getSpeed() * Math.cos(Math.toRadians(a.getHeading()));
     }
 
-    private String classifySeverity(double distance, double altDiff) {
-        if (distance < 1.0 && altDiff < 300) return "CRITICAL";
-        else if (distance < 2.0)             return "HIGH";
-        else                                 return "MEDIUM";
+    private static double clamp(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static Conflict.Severity classifySeverity(double distance, double altitudeDiff) {
+        if (distance < 1.0 && altitudeDiff < 300) return Conflict.Severity.CRITICAL;
+        if (distance < 2.0) return Conflict.Severity.HIGH;
+        return Conflict.Severity.MEDIUM;
     }
 }

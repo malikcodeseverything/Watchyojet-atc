@@ -8,7 +8,8 @@ import com.watchyojet.model.AircraftType;
 
 public class DemoScenario {
 
-    // Three converging pairs at distinct altitude bands, plus four background tracks.
+    // Three converging pairs, plus four background tracks. Pairs A and B are en route traffic
+    // (5 NM minimum); pair C is terminal traffic below FL180 near PHL (3 NM minimum).
     public static List<Aircraft> build() {
         return Arrays.asList(
             new Aircraft("DEMO01", 40.00, -75.30, 22000, 300, 180, AircraftType.B737),
@@ -18,7 +19,7 @@ public class DemoScenario {
             new Aircraft("DEMO04", 40.05, -75.30, 27500, 320, 270, AircraftType.A320),
 
             new Aircraft("DEMO05", 39.58, -75.55, 12000, 280,  90, AircraftType.B737),
-            new Aircraft("DEMO06", 39.50, -75.15, 12500, 280, 270, AircraftType.B737),
+            new Aircraft("DEMO06", 39.55, -75.15, 12500, 280, 270, AircraftType.B737),
 
             new Aircraft("BKGD01", 40.50, -74.90, 35000, 260, 220, AircraftType.A350),
             new Aircraft("BKGD02", 39.20, -76.10, 32000, 280,  50, AircraftType.A320),

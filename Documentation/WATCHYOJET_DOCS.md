@@ -24,13 +24,25 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
 
 ## Prediction and maneuver search
 
-1. `MovementEngine` projects each aircraft's position forward using its
-   current ground speed and track.
-2. `ConflictDetector` uses relative horizontal velocity to calculate time
-   and distance at closest point of approach. Parallel and diverging pairs
-   are checked at their current distance. Within the ten-minute lookahead,
-   distances below 5 NM and altitude differences below 1,000 ft trigger an
-   alert. Prediction assumes constant altitude.
+1. `MovementEngine` projects each aircraft forward using its current
+   ground speed, track and reported vertical rate.
+2. `ConflictDetector` finds the time window in which a pair is inside the
+   lateral minimum and the window in which it is inside 1,000 ft
+   vertically. A conflict is flagged only when the two windows overlap
+   within the lookahead, so a climbing or descending aircraft is flagged
+   only if it reaches the other aircraft's level while they are laterally
+   close. `SeparationStandards` sets the thresholds: 3 NM when both
+   aircraft are below FL180 and within 40 NM of PHL, 5 NM otherwise, with
+   a 2 minute lookahead in that terminal area and 5 minutes elsewhere. The
+   lookaheads are this project's choices: straight-line predictions age
+   quickly in terminal airspace, where aircraft turn and change level often.
+   Pairs involving a VFR aircraft (transponder code 1200) are counted as
+   traffic advisories and are not resolved, since ATC gives VFR traffic
+   information rather than separation outside Class B airspace. An aircraft
+   squawking 7500, 7600 or 7700 is treated as an emergency and is never the
+   one asked to maneuver. Once an alert is active, it is held until the pair
+   clears the minima by 0.5 NM or 200 ft, which keeps pairs hovering at the
+   threshold from flickering between new and cleared.
 3. `ATCEngine` tracks each alert by its aircraft pair, so an encounter keeps
    its first-seen time across refreshes. It groups conflicts that share
    aircraft. `ResolutionEngine` searches for altitude changes, then track
@@ -39,7 +51,10 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
 4. Each group is tested on its own trial copy of the tracks. A group is
    rejected if its maneuvers create a new predicted conflict. Rejecting one
    group does not affect the others.
-5. The cycle mode decides what happens next:
+5. A pair that is already inside both minima and has no maneuver that
+   separates it in the trial is reported as separation already lost, the
+   situation in which a controller issues a safety alert.
+6. The cycle mode decides what happens next:
    - `ADVISE` (live OpenSky traffic): nothing is applied. Each alert carries
      its proposed instruction and whether it clears in simulation. An alert
      is reported cleared only when the observed tracks stop triggering it.
@@ -48,9 +63,10 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
      instruction that cleared them.
    - `DETECT_ONLY` (first eight seconds of the demo): alerts are shown and
      no maneuvers are evaluated.
-6. Every cycle produces a `CycleReport` with active alerts, cleared alerts,
+7. Every cycle produces a `CycleReport` with active alerts, cleared alerts,
    and counters (alerts, new alerts, groups, proposals, accepted and rejected
-   groups, pairs cleared in trial, pairs without a safe maneuver). The
+   groups, pairs cleared in trial, pairs without a safe maneuver, pairs
+   already inside the minima, held alerts and VFR traffic advisories). The
    counters are logged and shown above the conflict list. The engine hands
    the report to a `CycleListener`, so it has no dependency on the display.
 
@@ -74,8 +90,10 @@ services. Tower and ground positions coordinate runway occupancy, taxi
 movements, crossings, takeoff, and landing. The simulator's airport drawings
 provide geographic context for those facilities. [FAA facility classifications](https://aspmhelp.faa.gov/index/OPSNET__Facility_Classification.html) · [FAA airport operations](https://www.faa.gov/air_traffic/publications/aim_html/chap4_section_3.html)
 
-The simulation's alert thresholds are fixed. FAA radar minima depend on
-operating conditions, including surveillance mode and wake turbulence.
-WatchyoJet uses public state vectors and simplified trajectories. Maneuvers
-are instant changes in simulated state, and the model does not account for
-vertical rate, turn rate, or controller and pilot coordination. [FAA radar separation](https://www.faa.gov/air_traffic/publications/atpubs/atc_html/chap5_section_5.html)
+The simulation's alert thresholds are a simplified version of the FAA
+radar minima, which also depend on surveillance mode, wake turbulence and
+the airspace class. Separation of VFR aircraft inside Class B airspace is
+not modeled. WatchyoJet uses public state vectors and straight-line
+trajectories with constant vertical rate. Maneuvers are instant changes in
+simulated state, and the model does not account for turn rate, level-off
+or controller and pilot coordination. [FAA radar separation](https://www.faa.gov/air_traffic/publications/atpubs/atc_html/chap5_section_5.html)

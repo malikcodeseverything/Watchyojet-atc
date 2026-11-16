@@ -154,7 +154,8 @@ public class ResolutionEngine {
 
         for (int delta : deltas) {
             double candidate = (currentHdg + delta + 360) % 360;
-            if (cpaSepWithHdg(moving, candidate, conflicting, committed) < ConflictDetector.MIN_DISTANCE) continue;
+            if (cpaSepWithHdg(moving, candidate, conflicting, committed)
+                    < SeparationStandards.lateralMinimumNm(moving, conflicting)) continue;
 
             // ensure the turn does not create a new conflict with nearby traffic
             boolean safe = true;
@@ -162,7 +163,8 @@ public class ResolutionEngine {
                 if (neighbor == moving || neighbor == conflicting) continue;
                 if (distanceNM(moving.getLat(), moving.getLon(),
                                neighbor.getLat(), neighbor.getLon()) > HDG_NEIGHBOR_NM) continue;
-                if (cpaSepWithHdg(moving, candidate, neighbor, committed) < ConflictDetector.MIN_DISTANCE) {
+                if (cpaSepWithHdg(moving, candidate, neighbor, committed)
+                        < SeparationStandards.lateralMinimumNm(moving, neighbor)) {
                     safe = false;
                     break;
                 }
@@ -188,13 +190,15 @@ public class ResolutionEngine {
         double minimum = Math.max(ABSOLUTE_SPEED_FLOOR,
                 moving.getType().getMinimumSafeSpeed());
         if (reduced < minimum) return null;
-        if (cpaSepWithSpeed(moving, reduced, conflicting, committed) < ConflictDetector.MIN_DISTANCE) return null;
+        if (cpaSepWithSpeed(moving, reduced, conflicting, committed)
+                < SeparationStandards.lateralMinimumNm(moving, conflicting)) return null;
 
         for (Aircraft neighbor : all) {
             if (neighbor == moving || neighbor == conflicting) continue;
             if (Math.abs(getEffectiveAlt(moving, committed)
                     - getEffectiveAlt(neighbor, committed)) >= ALTITUDE_BUFFER) continue;
-            if (cpaSepWithSpeed(moving, reduced, neighbor, committed) < ConflictDetector.MIN_DISTANCE) return null;
+            if (cpaSepWithSpeed(moving, reduced, neighbor, committed)
+                    < SeparationStandards.lateralMinimumNm(moving, neighbor)) return null;
         }
         return Resolution.forSpeed(moving, reduced);
     }
@@ -234,7 +238,7 @@ public class ResolutionEngine {
      * Computes the CPA distance between 'moving' (using newHdgDeg) and 'other'
      * (using its committed or actual heading). Returns current separation if
      * tracks are already diverging — the new heading didn't help, so the small
-     * current distance correctly fails the ≥ ConflictDetector.MIN_DISTANCE gate.
+     * current distance correctly fails the lateral minimum gate.
      */
     private double cpaSepWithHdg(Aircraft moving, double newHdgDeg, Aircraft other,
                                   Map<String, double[]> committed) {

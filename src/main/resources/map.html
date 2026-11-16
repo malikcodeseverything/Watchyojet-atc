@@ -603,7 +603,7 @@
 <main class="main">
   <canvas id="mapCanvas"></canvas>
   <div class="map-overlay-top">
-    <div class="legend-pill"><span class="dot" style="background:var(--ok)"></span>Cruise</div>
+    <div class="legend-pill"><span class="dot" style="background:var(--ok)"></span>Level</div>
     <div class="legend-pill"><span class="dot" style="background:var(--warn)"></span>Climb</div>
     <div class="legend-pill"><span class="dot" style="background:var(--accent)"></span>Descent</div>
     <div class="legend-pill"><span class="dot" style="background:var(--danger)"></span>Conflict</div>
@@ -2122,16 +2122,16 @@ function renderAircraftDetail() {
     <div class="aircraft-card">
       <div class="callsign">${escapeHtml(a.callsign)}<span class="type-tag">${escapeHtml(a.type)}</span></div>
       <div class="route">${a.route}</div>
-      <span class="status-badge ${a.status}">● ${a.status.toUpperCase()}${a.groundRole?' · '+a.groundRole.toUpperCase():''}</span>
+      <span class="status-badge ${a.status}">● ${a.status === 'cruise' ? 'LEVEL' : a.status.toUpperCase()}${a.groundRole?' · '+a.groundRole.toUpperCase():''}</span>
       <div class="telemetry-grid">
         <div class="telem"><div class="label">Altitude</div><div class="value">${a.alt.toLocaleString()}<span class="unit">ft</span></div></div>
         <div class="telem"><div class="label">Ground speed</div><div class="value">${a.spd}<span class="unit">kt</span></div></div>
         <div class="telem"><div class="label">Track</div><div class="value">${String(a.hdg).padStart(3,'0')}<span class="unit">°</span></div></div>
       </div>
       <div class="telemetry-grid" style="margin-top:8px;padding-top:8px;border-top:none">
-        <div class="telem"><div class="label">Squawk</div><div class="value" style="font-size:16px">${a.squawk}</div></div>
-        <div class="telem"><div class="label">Lat</div><div class="value" style="font-size:14px">${a.lat.toFixed(2)}°</div></div>
-        <div class="telem"><div class="label">Lon</div><div class="value" style="font-size:14px">${a.lon.toFixed(2)}°</div></div>
+        <div class="telem"><div class="label">Squawk</div><div class="value" style="font-size:16px">${escapeHtml(a.squawk)}</div></div>
+        <div class="telem"><div class="label">Vertical</div><div class="value" style="font-size:14px">${a.vr > 0 ? '+' : ''}${(a.vr || 0).toLocaleString()}<span class="unit">fpm</span></div></div>
+        <div class="telem"><div class="label">Position</div><div class="value" style="font-size:14px">${a.lat.toFixed(2)}°, ${a.lon.toFixed(2)}°</div></div>
       </div>
     </div>
   `;
@@ -2324,9 +2324,10 @@ function flushAircraftSnapshot() {
       callsign: d.cs, type: feedSource === 'DEMO' ? d.type : 'Unknown',
       lon: d.lon, lat: d.lat,
       alt: Math.round(d.alt), spd: Math.round(d.spd), hdg: Math.round(d.hdg),
-      status: d.alt > 10000 ? 'cruise' : d.alt > 3000 ? 'climb' : 'descent',
+      vr: Math.round(d.vr || 0),
+      status: (d.vr || 0) > 300 ? 'climb' : (d.vr || 0) < -300 ? 'descent' : 'cruise',
       route: feedSource === 'DEMO' ? 'Scripted demo' : 'OpenSky track',
-      squawk: '----', onGround: false
+      squawk: d.sq || '----', onGround: false
     });
   }
   for (const id of feedAircraft.keys()) {
@@ -2392,6 +2393,12 @@ function _adviceLine(conflict) {
       return `<div class="resolution-detail">Proposed: ${instruction} · does not clear this pair</div>`;
     case 'NO_SAFE_MANEUVER':
       return `<div class="resolution-detail">No safe maneuver found</div>`;
+    case 'SEPARATION_LOST':
+      return instruction
+        ? `<div class="resolution-detail">Separation already lost · safety alert · best option: ${instruction}</div>`
+        : `<div class="resolution-detail">Separation already lost · safety alert</div>`;
+    case 'CLEARING':
+      return `<div class="resolution-detail advice-ok">Separating · alert held until clear by a margin</div>`;
     case 'MANEUVER_IN_PROGRESS':
       return `<div class="resolution-detail">Maneuver in progress</div>`;
     default:
@@ -2408,7 +2415,8 @@ function renderCycleStats() {
   const c = cycleCounters;
   if (trafficMode === 'ADVISE') {
     el.textContent = `Advisory only · ${c.alerts} alerts · ${c.pairsClearedInTrial} clear in simulation · ` +
-      `${c.rejectedGroups} rejected · ${c.noSafeManeuver} without a safe maneuver`;
+      `${c.rejectedGroups} rejected · ${c.noSafeManeuver} without a safe maneuver · ` +
+      `${c.separationLost} already lost · ${c.trafficAdvisories} VFR traffic`;
   } else if (trafficMode === 'SIMULATE') {
     el.textContent = `Simulation · maneuvers applied to scripted tracks · ${c.alerts} alerts`;
   } else {

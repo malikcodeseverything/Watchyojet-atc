@@ -64,6 +64,29 @@ class OpenSkyFetcherTest {
     }
 
     @Test
+    void readsVerticalRateAndTransponderCode() throws IOException {
+        var result = fetcher.parseSnapshot("""
+                {"states": [
+                  ["abc130", "CLIMB", null, null, null, -75, 40, 3000, false, 125, 90, 5.08, null, null, "1200"],
+                  ["abc131", "LEVEL", null, null, null, -75, 40, 3000, false, 125, 90, null, null, null, "77X0"],
+                  ["abc132", "MAYDAY", null, null, null, -75, 40, 3000, false, 125, 90, -99, null, null, "7700"]
+                ]}
+                """);
+
+        var climbing = result.aircraft().get(0);
+        assertEquals(1000, climbing.getVerticalRate(), 1);
+        assertTrue(climbing.isVfr());
+
+        var level = result.aircraft().get(1);
+        assertEquals(0, level.getVerticalRate());
+        assertEquals(null, level.getSquawk());
+
+        var emergency = result.aircraft().get(2);
+        assertEquals(0, emergency.getVerticalRate(), "implausible rates count as level");
+        assertTrue(emergency.isSquawkingEmergency());
+    }
+
+    @Test
     void distinguishesEmptyTrafficFromAnInvalidSnapshot() throws IOException {
         var empty = fetcher.parseSnapshot("{\"states\": []}");
         assertTrue(empty.successful());

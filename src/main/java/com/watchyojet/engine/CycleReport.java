@@ -26,6 +26,10 @@ public record CycleReport(CycleMode mode, List<ActiveAlert> active, List<Cleared
         DOES_NOT_CLEAR,
         /** No candidate altitude, heading or speed passed the safety checks. */
         NO_SAFE_MANEUVER,
+        /** The pair is already inside both minima and no maneuver separates it in the trial. */
+        SEPARATION_LOST,
+        /** No longer inside the minima, but still within the hold margin, so the alert stays up. */
+        CLEARING,
         /** Both aircraft were maneuvered recently and are left alone until the cooldown ends. */
         MANEUVER_IN_PROGRESS,
         /** Maneuvers are not evaluated in this mode. */
@@ -56,9 +60,16 @@ public record CycleReport(CycleMode mode, List<ActiveAlert> active, List<Cleared
         }
     }
 
-    /** Per-cycle numbers, so it is visible whether resolution is working at all. */
+    /**
+     * Per-cycle numbers, so it is visible whether resolution is working at all.
+     *
+     * @param trafficAdvisories predicted proximity involving a VFR aircraft (squawk 1200). These
+     *                          get traffic information, not separation, so they are counted but
+     *                          not resolved.
+     */
     public record Counters(int alerts, int newAlerts, int clearedAlerts, int groups,
                            int proposals, int acceptedGroups, int rejectedGroups,
-                           int pairsClearedInTrial, int noSafeManeuver) {
+                           int pairsClearedInTrial, int noSafeManeuver, int separationLost,
+                           int clearing, int trafficAdvisories) {
     }
 }

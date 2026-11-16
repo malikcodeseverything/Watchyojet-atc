@@ -94,4 +94,45 @@ public class ConflictDetectorTest {
         assertEquals(0.0, conflicts.getFirst().getTCPA());
         assertEquals(1.8, conflicts.getFirst().getDCPA(), 0.001);
     }
+    @Test
+    void appliesThreeMilesInTheTerminalAreaAndFiveAbove() {
+        // Parallel tracks 4 NM apart near PHL.
+        Aircraft low1 = new Aircraft("L1", 39.90, -75.30, 8_000, 250, 0, AircraftType.B737);
+        Aircraft low2 = new Aircraft("L2", 39.90, -75.2135, 8_000, 250, 0, AircraftType.B737);
+        Aircraft high1 = new Aircraft("H1", 39.90, -75.30, 30_000, 250, 0, AircraftType.B737);
+        Aircraft high2 = new Aircraft("H2", 39.90, -75.2135, 30_000, 250, 0, AircraftType.B737);
+
+        assertTrue(new ConflictDetector().detectConflicts(List.of(low1, low2)).isEmpty());
+        assertEquals(1, new ConflictDetector().detectConflicts(List.of(high1, high2)).size());
+    }
+
+    @Test
+    void usesVerticalRateToPredictWhetherLevelsMeet() {
+        // Head-on near PHL, 10 NM apart, closing at 500 kt.
+        Aircraft level = new Aircraft("LEVEL", 39.80, -75.25, 8_000, 250, 0, AircraftType.B737);
+        Aircraft descending = new Aircraft("DESC", 39.9667, -75.25, 11_000, 250, 180, AircraftType.B737);
+
+        assertTrue(new ConflictDetector().detectConflicts(List.of(level, descending)).isEmpty(),
+                "level 3,000 ft apart");
+
+        descending.setVerticalRate(-1_500);
+        assertEquals(1, new ConflictDetector().detectConflicts(List.of(level, descending)).size(),
+                "descends into the other aircraft's level while laterally close");
+
+        descending.setVerticalRate(1_500);
+        assertTrue(new ConflictDetector().detectConflicts(List.of(level, descending)).isEmpty(),
+                "climbing away");
+    }
+
+    @Test
+    void looksFurtherAheadEnRouteThanInTheTerminalArea() {
+        // Head-on 30 NM apart, closing at 500 kt: the lateral minimum is reached after about 3 minutes.
+        Aircraft low1 = new Aircraft("L1", 39.60, -75.25, 8_000, 250, 0, AircraftType.B737);
+        Aircraft low2 = new Aircraft("L2", 40.10, -75.25, 8_000, 250, 180, AircraftType.B737);
+        Aircraft high1 = new Aircraft("H1", 39.60, -75.25, 30_000, 250, 0, AircraftType.B737);
+        Aircraft high2 = new Aircraft("H2", 40.10, -75.25, 30_000, 250, 180, AircraftType.B737);
+
+        assertTrue(new ConflictDetector().detectConflicts(List.of(low1, low2)).isEmpty());
+        assertEquals(1, new ConflictDetector().detectConflicts(List.of(high1, high2)).size());
+    }
 }

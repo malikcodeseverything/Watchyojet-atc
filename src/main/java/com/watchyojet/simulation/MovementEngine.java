@@ -24,6 +24,10 @@ public class MovementEngine {
 
             a.setLat(a.getLat() + dLat);
             a.setLon(a.getLon() + dLon);
+
+            // Coast the reported climb or descent until the next observation.
+            double climbFt = a.getVerticalRate() * (CYCLE_SECONDS / 60.0);
+            a.setAltitude(Math.max(0, a.getAltitude() + climbFt));
         }
     }
 }

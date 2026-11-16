@@ -172,11 +172,20 @@ public class WYJAppController implements CycleListener {
     public void updateAllAircraft(List<Aircraft> aircrafts) {
         final String aircraftJson;
         try {
-            aircraftJson = JSON.writeValueAsString(aircrafts.stream().map(a -> Map.of(
-                    "id", a.getId(), "cs", a.getCallsign(), "lat", a.getLat(), "lon", a.getLon(),
-                    "alt", a.getAltitude(), "spd", a.getSpeed(), "hdg", a.getHeading(),
-                    "type", a.getType().name()
-            )).toList());
+            aircraftJson = JSON.writeValueAsString(aircrafts.stream().map(a -> {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("id", a.getId());
+                item.put("cs", a.getCallsign());
+                item.put("lat", a.getLat());
+                item.put("lon", a.getLon());
+                item.put("alt", a.getAltitude());
+                item.put("spd", a.getSpeed());
+                item.put("hdg", a.getHeading());
+                item.put("vr", a.getVerticalRate());
+                item.put("sq", a.getSquawk() == null ? "" : a.getSquawk());
+                item.put("type", a.getType().name());
+                return item;
+            }).toList());
         } catch (JsonProcessingException e) {
             log("Unable to encode aircraft update: " + e.getMessage());
             return;
@@ -241,6 +250,9 @@ public class WYJAppController implements CycleListener {
             counters.put("rejectedGroups", c.rejectedGroups());
             counters.put("pairsClearedInTrial", c.pairsClearedInTrial());
             counters.put("noSafeManeuver", c.noSafeManeuver());
+            counters.put("separationLost", c.separationLost());
+            counters.put("clearing", c.clearing());
+            counters.put("trafficAdvisories", c.trafficAdvisories());
             payload.put("counters", counters);
             reportJson = JSON.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
