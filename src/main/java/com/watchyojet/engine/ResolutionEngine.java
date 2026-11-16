@@ -19,10 +19,8 @@ public class ResolutionEngine {
     private static final double HIGH_ALT_FLOOR    = 18000;  // ft — FL180 IFR/VFR band boundary
     private static final double PROXIMITY_NM      = 10.0;   // NM radius for altitude slot checks
     private static final double HDG_NEIGHBOR_NM   = 5.0;    // NM radius for heading safety checks
-    private static final double HDG_MIN_SEP       = 3.5;    // NM — target separation after turn (above 3 NM threshold)
     private static final double SPEED_REDUCTION   = 0.90;   // conservative 10% reduction
     private static final double ABSOLUTE_SPEED_FLOOR = 140; // no low-speed commands from inferred types
-    private static final double SPEED_MIN_SEP     = 5.0;    // NM after a proposed speed change
 
     // Thresholds for escalating to aggressive manoeuvres
     private static final double CRITICAL_DCPA     = 0.5;    // NM
@@ -142,7 +140,7 @@ public class ResolutionEngine {
 
     // ── Heading resolution ────────────────────────────────────────────────────
 
-    private Resolution tryHeading(Aircraft moving, Aircraft conflicting,
+    Resolution tryHeading(Aircraft moving, Aircraft conflicting,
                                    List<Aircraft> all,
                                    Map<String, double[]> committed,
                                    boolean critical) {
@@ -156,7 +154,7 @@ public class ResolutionEngine {
 
         for (int delta : deltas) {
             double candidate = (currentHdg + delta + 360) % 360;
-            if (cpaSepWithHdg(moving, candidate, conflicting, committed) < HDG_MIN_SEP) continue;
+            if (cpaSepWithHdg(moving, candidate, conflicting, committed) < ConflictDetector.MIN_DISTANCE) continue;
 
             // ensure the turn does not create a new conflict with nearby traffic
             boolean safe = true;
@@ -164,7 +162,7 @@ public class ResolutionEngine {
                 if (neighbor == moving || neighbor == conflicting) continue;
                 if (distanceNM(moving.getLat(), moving.getLon(),
                                neighbor.getLat(), neighbor.getLon()) > HDG_NEIGHBOR_NM) continue;
-                if (cpaSepWithHdg(moving, candidate, neighbor, committed) < HDG_MIN_SEP) {
+                if (cpaSepWithHdg(moving, candidate, neighbor, committed) < ConflictDetector.MIN_DISTANCE) {
                     safe = false;
                     break;
                 }
@@ -178,7 +176,7 @@ public class ResolutionEngine {
     // ── Speed resolution (last resort) ────────────────────────────────────────
 
     /**
-     * Slows the moving aircraft by 20%. Shifting speed materially changes tCPA
+     * Slows the moving aircraft by 10%. Shifting speed materially changes tCPA
      * so that the conflict resolves on its own over the next few cycles.
      * Only issued if the reduced speed stays above the operational floor.
      */
@@ -190,13 +188,13 @@ public class ResolutionEngine {
         double minimum = Math.max(ABSOLUTE_SPEED_FLOOR,
                 moving.getType().getMinimumSafeSpeed());
         if (reduced < minimum) return null;
-        if (cpaSepWithSpeed(moving, reduced, conflicting, committed) < SPEED_MIN_SEP) return null;
+        if (cpaSepWithSpeed(moving, reduced, conflicting, committed) < ConflictDetector.MIN_DISTANCE) return null;
 
         for (Aircraft neighbor : all) {
             if (neighbor == moving || neighbor == conflicting) continue;
             if (Math.abs(getEffectiveAlt(moving, committed)
                     - getEffectiveAlt(neighbor, committed)) >= ALTITUDE_BUFFER) continue;
-            if (cpaSepWithSpeed(moving, reduced, neighbor, committed) < SPEED_MIN_SEP) return null;
+            if (cpaSepWithSpeed(moving, reduced, neighbor, committed) < ConflictDetector.MIN_DISTANCE) return null;
         }
         return Resolution.forSpeed(moving, reduced);
     }
@@ -236,7 +234,7 @@ public class ResolutionEngine {
      * Computes the CPA distance between 'moving' (using newHdgDeg) and 'other'
      * (using its committed or actual heading). Returns current separation if
      * tracks are already diverging — the new heading didn't help, so the small
-     * current distance correctly fails the ≥ HDG_MIN_SEP gate.
+     * current distance correctly fails the ≥ ConflictDetector.MIN_DISTANCE gate.
      */
     private double cpaSepWithHdg(Aircraft moving, double newHdgDeg, Aircraft other,
                                   Map<String, double[]> committed) {

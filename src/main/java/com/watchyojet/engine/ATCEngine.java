@@ -78,62 +78,21 @@ public class ATCEngine {
             if (e.getValue() + COOLDOWN_MS > now) locked.add(e.getKey());
         }
 
-        // committed[callsign] = {alt, hdg, spd} with NaN = unchanged
+        // committed[aircraft ID] = {alt, hdg, spd} with NaN = unchanged
         Map<String, double[]> committed = new HashMap<>();
 
-        List<Resolution>  allResolutions = new ArrayList<>();
-        List<String[]>    resolvedPairs  = new ArrayList<>();
-        List<String[]>    unresolvedPairs = new ArrayList<>();
+        List<Resolution> allResolutions = new ArrayList<>();
 
-        // process each cluster holistically
         for (List<Conflict> cluster : detectClusters(conflicts)) {
-
-            List<Resolution> clusterResolutions =
-                resolver.resolveCluster(cluster, aircrafts, committed, locked, hardPairs);
-
-            for (Resolution r : clusterResolutions) {
-                String cs = r.getAircraft().getCallsign();
-                String aircraftId = r.getAircraft().getId();
-                locked.add(aircraftId);
-                resolutionCooldown.put(aircraftId, now);
-                allResolutions.add(r);
-
-                // find both callsigns for the first conflict involving this aircraft
-                String cs1 = cs, cs2 = cs;
-                for (Conflict c : cluster) {
-                    if (c.getA1().getId().equals(aircraftId) || c.getA2().getId().equals(aircraftId)) {
-                        cs1 = c.getA1().getCallsign();
-                        cs2 = c.getA2().getCallsign();
-                        break;
-                    }
-                }
-
-                String tag;
-                if (r.isSpeedResolution()) {
-                    tag = "SPD:" + (int) r.getNewSpeed();
-                } else if (r.isHeadingResolution()) {
-                    tag = "HDG:" + (int) r.getNewHeading();
-                } else {
-                    tag = String.valueOf((int) r.getNewAltitude());
-                }
-                resolvedPairs.add(new String[]{cs1, cs2, cs, tag});
-            }
-
-            // any conflict in the cluster with both aircraft still locked = unresolved
-            for (Conflict c : cluster) {
-                boolean a1resolved = allResolutions.stream()
-                    .anyMatch(r -> r.getAircraft().getId().equals(c.getA1().getId()));
-                boolean a2resolved = allResolutions.stream()
-                    .anyMatch(r -> r.getAircraft().getId().equals(c.getA2().getId()));
-                if (!a1resolved && !a2resolved) {
-                    unresolvedPairs.add(new String[]{c.getA1().getCallsign(), c.getA2().getCallsign()});
-                }
-            }
+            allResolutions.addAll(resolver.resolveCluster(cluster, aircrafts, committed, locked, hardPairs));
         }
 
+        Map<String, Resolution> appliedByAircraft = new HashMap<>();
         // apply resolutions
         for (Resolution r : allResolutions) {
             Aircraft ac = r.getAircraft();
+            resolutionCooldown.put(ac.getId(), now);
+            appliedByAircraft.put(ac.getId(), r);
             if (r.isSpeedResolution()) {
                 ac.setSpeed(r.getNewSpeed());
                 System.out.println("[RESOLVED-SPD] " + ac.getCallsign()
@@ -149,29 +108,47 @@ public class ATCEngine {
             }
         }
 
-        if (!unresolvedPairs.isEmpty()) {
-            System.out.println("[UNRESOLVED] " + unresolvedPairs.size()
-                    + " conflict(s) could not be resolved this cycle");
+        List<Conflict> postCheck = allResolutions.isEmpty()
+                ? conflicts : detector.detectConflicts(aircrafts, false);
+        Set<String> remainingPairs = new HashSet<>();
+        for (Conflict conflict : postCheck) remainingPairs.add(conflictKey(conflict));
+
+        List<String[]> resolvedPairs = new ArrayList<>();
+        int unresolvedCount = 0;
+        for (Conflict conflict : conflicts) {
+            if (remainingPairs.remove(conflictKey(conflict))) {
+                unresolvedCount++;
+                continue;
+            }
+            Resolution action = appliedByAircraft.get(conflict.getA1().getId());
+            if (action == null) action = appliedByAircraft.get(conflict.getA2().getId());
+            if (action != null) resolvedPairs.add(resolvedPair(conflict, action));
         }
 
-        // post-resolution sanity check
-        if (!allResolutions.isEmpty()) {
-            Set<String> originalPairs = new HashSet<>();
-            for (Conflict conflict : conflicts) originalPairs.add(conflictKey(conflict));
-            List<Conflict> postCheck = detector.detectConflicts(aircrafts, false);
-            long newlyCreated = postCheck.stream()
-                .filter(pc -> !originalPairs.contains(conflictKey(pc)))
-                .filter(pc -> allResolutions.stream().anyMatch(res ->
-                    res.getAircraft().getId().equals(pc.getA1().getId()) ||
-                    res.getAircraft().getId().equals(pc.getA2().getId())))
-                .count();
-            if (newlyCreated > 0)
-                System.out.println("[WARNING] " + newlyCreated
-                        + " new conflict(s) introduced by resolution — will handle next cycle");
+        if (unresolvedCount > 0) {
+            System.out.println("[UNRESOLVED] " + unresolvedCount
+                    + " conflict(s) still predicted after this cycle");
+        }
+        if (!remainingPairs.isEmpty()) {
+            System.out.println("[WARNING] " + remainingPairs.size()
+                    + " new conflict(s) introduced by resolution — will handle next cycle");
         }
 
-        notifyConflicts(conflicts, resolvedPairs);
+        notifyConflicts(postCheck, resolvedPairs);
         updateMap(aircrafts);
+    }
+
+    private static String[] resolvedPair(Conflict conflict, Resolution action) {
+        String tag;
+        if (action.isSpeedResolution()) {
+            tag = "SPD:" + (int) action.getNewSpeed();
+        } else if (action.isHeadingResolution()) {
+            tag = "HDG:" + (int) action.getNewHeading();
+        } else {
+            tag = String.valueOf((int) action.getNewAltitude());
+        }
+        return new String[]{conflict.getA1().getCallsign(), conflict.getA2().getCallsign(),
+                action.getAircraft().getCallsign(), tag};
     }
 
     // ── Conflict key ─────────────────────────────────────────────────────────

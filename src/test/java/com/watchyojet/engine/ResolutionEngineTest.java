@@ -20,6 +20,15 @@ import com.watchyojet.model.Resolution;
 class ResolutionEngineTest {
 
     @Test
+    void rejectsHeadingChangesThatLeaveThePairInsideTheAlertThreshold() {
+        Aircraft moving = new Aircraft("MOVE", 40.0, -75.0, 30_000, 300, 180, AircraftType.B737);
+        Aircraft opposite = new Aircraft("OPPOSITE", 39.6, -75.0, 30_000, 300, 0, AircraftType.B737);
+
+        assertNull(new ResolutionEngine().tryHeading(
+                moving, opposite, List.of(moving, opposite), new HashMap<>(), false));
+    }
+
+    @Test
     void issuesSpeedReductionOnlyWhenItCreatesSafeSeparation() {
         Aircraft moving = new Aircraft("move-id", "MOVE", 40, -75.13,
                 10_000, 250, 90, AircraftType.B737);
