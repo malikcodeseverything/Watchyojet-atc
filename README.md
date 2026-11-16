@@ -42,8 +42,9 @@ JavaFX controller → WebView traffic display
 ```
 
 The simulator uses a 5 NM horizontal and 1,000 ft vertical alert threshold,
-with a lookahead of up to ten minutes. It rechecks the original pairs after
-applying simulated maneuvers and reports conflicts that remain or appear.
+with a lookahead of up to ten minutes. It tests proposed maneuvers on trial
+tracks before applying them and rejects a batch that introduces a new
+predicted conflict.
 Fresh OpenSky data restores the observed aircraft state.
 
 WatchyoJet ATC is an educational simulation. Maneuvers apply instantly to the

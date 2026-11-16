@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -87,36 +88,27 @@ public class ATCEngine {
             allResolutions.addAll(resolver.resolveCluster(cluster, aircrafts, committed, locked, hardPairs));
         }
 
+        Optional<List<Conflict>> trial = validateTrial(aircrafts, conflicts, committed);
         Map<String, Resolution> appliedByAircraft = new HashMap<>();
-        // apply resolutions
-        for (Resolution r : allResolutions) {
-            Aircraft ac = r.getAircraft();
-            resolutionCooldown.put(ac.getId(), now);
-            appliedByAircraft.put(ac.getId(), r);
-            if (r.isSpeedResolution()) {
-                ac.setSpeed(r.getNewSpeed());
-                System.out.println("[RESOLVED-SPD] " + ac.getCallsign()
-                        + " → " + (int) r.getNewSpeed() + " kt");
-            } else if (r.isHeadingResolution()) {
-                ac.setHeading(r.getNewHeading());
-                System.out.println("[RESOLVED-HDG] " + ac.getCallsign()
-                        + " → heading " + (int) r.getNewHeading() + "°");
-            } else {
-                ac.setAltitude(r.getNewAltitude());
-                System.out.println("[RESOLVED] " + ac.getCallsign()
-                        + " → " + (int) r.getNewAltitude() + " ft");
+        if (trial.isPresent()) {
+            for (Resolution resolution : allResolutions) {
+                Aircraft aircraft = resolution.getAircraft();
+                applyTrialState(aircraft, committed.get(aircraft.getId()));
+                appliedByAircraft.put(aircraft.getId(), resolution);
+                resolutionCooldown.put(aircraft.getId(), now);
             }
+        } else {
+            System.out.println("[REJECTED] Proposed maneuvers introduced a new predicted conflict.");
         }
 
-        List<Conflict> postCheck = allResolutions.isEmpty()
-                ? conflicts : detector.detectConflicts(aircrafts, false);
+        List<Conflict> postCheck = trial.orElse(conflicts);
         Set<String> remainingPairs = new HashSet<>();
         for (Conflict conflict : postCheck) remainingPairs.add(conflictKey(conflict));
 
         List<String[]> resolvedPairs = new ArrayList<>();
         int unresolvedCount = 0;
         for (Conflict conflict : conflicts) {
-            if (remainingPairs.remove(conflictKey(conflict))) {
+            if (remainingPairs.contains(conflictKey(conflict))) {
                 unresolvedCount++;
                 continue;
             }
@@ -129,13 +121,40 @@ public class ATCEngine {
             System.out.println("[UNRESOLVED] " + unresolvedCount
                     + " conflict(s) still predicted after this cycle");
         }
-        if (!remainingPairs.isEmpty()) {
-            System.out.println("[WARNING] " + remainingPairs.size()
-                    + " new conflict(s) introduced by resolution — will handle next cycle");
-        }
-
         notifyConflicts(postCheck, resolvedPairs);
         updateMap(aircrafts);
+    }
+
+    Optional<List<Conflict>> validateTrial(List<Aircraft> aircraft, List<Conflict> originalConflicts,
+                                           Map<String, double[]> proposedState) {
+        if (proposedState.isEmpty()) return Optional.of(originalConflicts);
+
+        List<Aircraft> trialAircraft = new ArrayList<>(aircraft.size());
+        for (Aircraft track : aircraft) {
+            double[] changes = proposedState.get(track.getId());
+            if (changes == null) {
+                trialAircraft.add(track);
+                continue;
+            }
+            Aircraft trial = new Aircraft(track.getId(), track.getCallsign(), track.getLat(),
+                    track.getLon(), track.getAltitude(), track.getSpeed(), track.getHeading(), track.getType());
+            applyTrialState(trial, changes);
+            trialAircraft.add(trial);
+        }
+
+        Set<String> originalPairs = new HashSet<>();
+        for (Conflict conflict : originalConflicts) originalPairs.add(conflictKey(conflict));
+        List<Conflict> predicted = detector.detectConflicts(trialAircraft, false);
+        for (Conflict conflict : predicted) {
+            if (!originalPairs.contains(conflictKey(conflict))) return Optional.empty();
+        }
+        return Optional.of(predicted);
+    }
+
+    private static void applyTrialState(Aircraft aircraft, double[] state) {
+        if (!Double.isNaN(state[0])) aircraft.setAltitude(state[0]);
+        if (!Double.isNaN(state[1])) aircraft.setHeading(state[1]);
+        if (!Double.isNaN(state[2])) aircraft.setSpeed(state[2]);
     }
 
     private static String[] resolvedPair(Conflict conflict, Resolution action) {

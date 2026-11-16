@@ -35,11 +35,11 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
    searches for altitude changes, then track changes, then speed reductions.
    Candidate checks use simplified aircraft performance, separation buffers,
    and other changes already selected in the cycle.
-4. The engine applies the changes to the simulated tracks and reruns conflict
-   detection. It reports each original pair as cleared only if the pair drops
-   out of the detector's results. Remaining and newly introduced conflicts
-   are displayed as alerts. New conflicts from a maneuver are reported after
-   application and can be reconsidered on later cycles.
+4. The engine reruns detection on trial tracks before applying changes. If
+   the trial introduces a new predicted conflict, the whole batch is
+   discarded for that cycle. For an accepted batch, the engine reports each
+   original pair as cleared only if the pair drops out of the detector's
+   results. Remaining conflicts stay active.
 
 ## Desktop display
 
