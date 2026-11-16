@@ -87,6 +87,22 @@ class OpenSkyFetcherTest {
     }
 
     @Test
+    void usesTheReportedEmitterCategoryForTypeAndRotorcraft() throws IOException {
+        var result = fetcher.parseSnapshot("""
+                {"states": [
+                  ["abc140", "HELI", null, null, null, -75, 40, 1500, false, 50, 90, 0, null, null, "4521", false, 0, 8],
+                  ["abc141", "HEAVY", null, null, null, -75, 40, 9000, false, 150, 90, 0, null, null, "2201", false, 0, 6],
+                  ["abc142", "NOCAT", null, null, null, -75, 40, 2000, false, 150, 90, 0, null, null, "2202"]
+                ]}
+                """);
+
+        assertTrue(result.aircraft().get(0).isRotorcraft());
+        assertEquals(com.watchyojet.model.AircraftType.A350, result.aircraft().get(1).getType());
+        assertEquals(0, result.aircraft().get(2).getEmitterCategory());
+        assertEquals(com.watchyojet.model.AircraftType.B737, result.aircraft().get(2).getType());
+    }
+
+    @Test
     void distinguishesEmptyTrafficFromAnInvalidSnapshot() throws IOException {
         var empty = fetcher.parseSnapshot("{\"states\": []}");
         assertTrue(empty.successful());

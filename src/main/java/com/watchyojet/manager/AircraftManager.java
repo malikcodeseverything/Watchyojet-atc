@@ -33,6 +33,7 @@ public class AircraftManager {
                 existing.setAltitude(live.getAltitude());
                 existing.setVerticalRate(live.getVerticalRate());
                 existing.setSquawk(live.getSquawk());
+                existing.setEmitterCategory(live.getEmitterCategory());
                 updatedMap.put(aircraftId, existing);
 
             } else {

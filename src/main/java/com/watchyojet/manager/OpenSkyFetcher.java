@@ -34,7 +34,7 @@ public class OpenSkyFetcher {
 
     // PHL TRACON area: ~60 NM radius around Philadelphia International (39.87N, 75.24W)
     private static final String OPENSKY_URL =
-        "https://opensky-network.org/api/states/all?lamin=38.8&lomin=-76.5&lamax=40.9&lomax=-74.0";
+        "https://opensky-network.org/api/states/all?lamin=38.8&lomin=-76.5&lamax=40.9&lomax=-74.0&extended=1";
 
     private final HttpClient   client;
     private final ObjectMapper mapper;
@@ -138,10 +138,12 @@ public class OpenSkyFetcher {
                 continue;
             }
 
+            int category = emitterCategory(state.path(17));
             Aircraft observed = new Aircraft(icao24, callsign, lat, lon, altitudeFeet, speedKnots,
-                    track, inferType(speedKnots, altitudeFeet));
+                    track, typeFor(category, speedKnots, altitudeFeet));
             observed.setVerticalRate(verticalRateFeetPerMinute(state.path(11)));
             observed.setSquawk(squawk(state.path(14)));
+            observed.setEmitterCategory(category);
             aircraft.add(observed);
         }
 
@@ -166,7 +168,28 @@ public class OpenSkyFetcher {
         return value.isNumber() ? value.doubleValue() : Double.NaN;
     }
 
-    private AircraftType inferType(double speedKnots, double altFeet) {
+    /** ADS-B emitter category (index 17, sent when extended=1), or 0 when absent. */
+    static int emitterCategory(JsonNode value) {
+        if (value == null || !value.isInt()) return 0;
+        int category = value.intValue();
+        return category >= 0 && category <= 20 ? category : 0;
+    }
+
+    /**
+     * Uses the reported emitter category when there is one: 2 light, 3 small, 4 large,
+     * 5 high-vortex large, 6 heavy. Falls back to a guess from speed and altitude.
+     */
+    static AircraftType typeFor(int category, double speedKnots, double altFeet) {
+        return switch (category) {
+            case 2 -> AircraftType.C172;
+            case 3, 7, 8 -> AircraftType.GENERIC;
+            case 4, 5 -> AircraftType.B737;
+            case 6 -> AircraftType.A350;
+            default -> inferType(speedKnots, altFeet);
+        };
+    }
+
+    private static AircraftType inferType(double speedKnots, double altFeet) {
         if (speedKnots > 400 || altFeet > 25000) return AircraftType.A320;
         if (speedKnots > 200)                    return AircraftType.B737;
         return AircraftType.C172;

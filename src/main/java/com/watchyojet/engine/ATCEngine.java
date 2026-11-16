@@ -321,9 +321,17 @@ public class ATCEngine {
         return copy;
     }
 
-    /** VFR traffic (squawk 1200) gets traffic information from ATC, not separation. */
+    /**
+     * VFR traffic (squawk 1200) gets traffic information from ATC, not separation. Helicopters
+     * around Philadelphia (police, news, medical) mostly fly VFR at low level and are handled
+     * the same way.
+     */
     private static boolean isTrafficAdvisory(Conflict conflict) {
-        return conflict.getA1().isVfr() || conflict.getA2().isVfr();
+        return isTrafficOnly(conflict.getA1()) || isTrafficOnly(conflict.getA2());
+    }
+
+    private static boolean isTrafficOnly(Aircraft aircraft) {
+        return aircraft.isVfr() || aircraft.isRotorcraft();
     }
 
     private static boolean isTowerPair(Conflict conflict) {
@@ -331,7 +339,7 @@ public class ATCEngine {
     }
 
     private Optional<Conflict> holdingConflict(Aircraft a1, Aircraft a2) {
-        if (a1 == null || a2 == null || a1.isVfr() || a2.isVfr()
+        if (a1 == null || a2 == null || isTrafficOnly(a1) || isTrafficOnly(a2)
                 || SeparationStandards.towerPair(a1, a2)) return Optional.empty();
         return detector.evaluate(a1, a2, SeparationStandards.HOLD_LATERAL_MARGIN_NM,
                 SeparationStandards.HOLD_VERTICAL_MARGIN_FT);
@@ -355,9 +363,22 @@ public class ATCEngine {
     }
 
     private static void logNewAlert(Conflict conflict) {
-        System.out.printf("[ALERT] %s <-> %s  %s  tCPA %.0f s  dCPA %.2f NM%n",
-                conflict.getA1().getCallsign(), conflict.getA2().getCallsign(),
-                conflict.getSeverity(), conflict.getTCPA(), conflict.getDCPA());
+        System.out.printf("[ALERT] %s  %s  tCPA %.0f s  dCPA %.2f NM%n        %s%n        %s%n",
+                conflict.getSeverity(), conflict.getA1().getCallsign() + " <-> "
+                        + conflict.getA2().getCallsign(),
+                conflict.getTCPA(), conflict.getDCPA(),
+                describe(conflict.getA1()), describe(conflict.getA2()));
+    }
+
+    /** One line per aircraft, so a log shows why a pair was flagged. */
+    static String describe(Aircraft a) {
+        double fromPhl = SeparationStandards.distanceNm(a.getLat(), a.getLon(),
+                SeparationStandards.PHL_LAT, SeparationStandards.PHL_LON);
+        return String.format(java.util.Locale.ROOT,
+                "%-8s %,6.0f ft %+6.0f fpm %3.0f kt sq %-4s cat %-2d %4.1f NM from PHL%s",
+                a.getCallsign(), a.getAltitude(), a.getVerticalRate(), a.getSpeed(),
+                a.getSquawk() == null ? "----" : a.getSquawk(), a.getEmitterCategory(), fromPhl,
+                SeparationStandards.inTerminalArea(a) ? " terminal" : "");
     }
 
     private static void logCycle(CycleMode mode, Counters c) {

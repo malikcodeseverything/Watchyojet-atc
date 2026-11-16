@@ -7,8 +7,11 @@ simulation by two seconds. Live mode queries OpenSky about every twelve seconds
 for airborne traffic in a rectangular region around Philadelphia. Requests
 run on the same background loop, so request latency can delay a cycle.
 
-`OpenSkyFetcher` reads true track and ground speed, and prefers barometric
-altitude over geometric altitude when both are available. `AircraftManager`
+`OpenSkyFetcher` reads true track, ground speed, vertical rate, transponder
+code and ADS-B emitter category, and prefers barometric altitude over
+geometric altitude when both are available. The emitter category (light,
+small, large, heavy, rotorcraft) sets the aircraft's performance class when
+it is reported; otherwise the class is estimated from speed and altitude. `AircraftManager`
 keys live aircraft by their ICAO24 addresses. Every successful snapshot
 replaces the tracked set and updates reported coordinates, altitude, track,
 and speed. In live mode the engine never edits these tracks, so every alert
@@ -36,9 +39,11 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
    a 2 minute lookahead in that terminal area and 5 minutes elsewhere. The
    lookaheads are this project's choices: straight-line predictions age
    quickly in terminal airspace, where aircraft turn and change level often.
-   Pairs involving a VFR aircraft (transponder code 1200) are counted as
-   traffic advisories and are not resolved, since ATC gives VFR traffic
-   information rather than separation outside Class B airspace. An aircraft
+   Pairs involving a VFR aircraft (transponder code 1200) or a helicopter
+   (ADS-B emitter category 8) are counted as traffic advisories and are not
+   resolved, since ATC gives VFR traffic information rather than separation
+   outside Class B airspace, and helicopters around Philadelphia (police,
+   news, medical) mostly fly VFR at low level. An aircraft
    squawking 7500, 7600 or 7700 is treated as an emergency and is never the
    one asked to maneuver. Pairs with both aircraft inside tower airspace
    (within 5 NM of PHL, PNE, TTN or ILG and below 2,500 ft) are counted
@@ -84,8 +89,8 @@ tracks with each snapshot and clears source-specific tracks and alerts when
 switching between OpenSky and the demo.
 
 The map distinguishes live OpenSky, cached, and demo tracks. Live aircraft
-types are shown as unknown. The engine uses estimates based on speed and
-altitude when evaluating maneuvers.
+types are shown as unknown. The engine uses the reported emitter category,
+or an estimate from speed and altitude, when evaluating maneuvers.
 
 ## ATC context and limitations
 

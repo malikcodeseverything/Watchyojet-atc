@@ -212,6 +212,18 @@ class ATCEngineTest {
     }
 
     @Test
+    void treatsHelicoptersAsTrafficInsteadOfSeparatingThem() {
+        var tracks = DemoScenario.build();
+        tracks.get(5).setEmitterCategory(8);   // DEMO06 reported as rotorcraft
+
+        CycleReport report = new ATCEngine().runCycle(tracks, CycleMode.ADVISE);
+
+        assertEquals(1, report.counters().trafficAdvisories());
+        assertEquals(2, report.active().size());
+        assertEquals(0, report.counters().rejectedGroups());
+    }
+
+    @Test
     void leavesPairsInsideTowerAirspaceToTheTower() {
         // Parallel arrivals 1 NM apart, 3 NM west of PHL.
         Aircraft left = new Aircraft("LEFT", 39.8719, -75.30, 1_500, 140, 90, AircraftType.B737);

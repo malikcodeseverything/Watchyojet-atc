@@ -20,6 +20,7 @@ public class Aircraft {
     private double heading;       // degrees true
     private double verticalRate;  // ft/min, positive when climbing
     private String squawk;        // transponder code, or null when not reported
+    private int emitterCategory;  // ADS-B emitter category from OpenSky, 0 when unknown
 
     public Aircraft(String callsign, double lat, double lon,
                     double altitude, double speed, double heading,
@@ -45,6 +46,7 @@ public class Aircraft {
         Aircraft copy = new Aircraft(id, callsign, lat, lon, altitude, speed, heading, type);
         copy.verticalRate = verticalRate;
         copy.squawk = squawk;
+        copy.emitterCategory = emitterCategory;
         return copy;
     }
 
@@ -74,6 +76,9 @@ public class Aircraft {
     public String getSquawk() { return squawk; }
     public void setSquawk(String squawk) { this.squawk = squawk; }
 
+    public int getEmitterCategory() { return emitterCategory; }
+    public void setEmitterCategory(int emitterCategory) { this.emitterCategory = emitterCategory; }
+
     public AircraftType getType() { return type; }
     public void setType(AircraftType type) { this.type = type; }
 
@@ -85,6 +90,11 @@ public class Aircraft {
     /** True when the transponder reports 1200, the VFR code. */
     public boolean isVfr() {
         return VFR_CODE.equals(squawk);
+    }
+
+    /** True when the ADS-B emitter category is 8, rotorcraft. */
+    public boolean isRotorcraft() {
+        return emitterCategory == 8;
     }
 
     /** An emergency squawk outranks the category inferred from the aircraft type. */

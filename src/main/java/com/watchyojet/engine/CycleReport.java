@@ -63,7 +63,8 @@ public record CycleReport(CycleMode mode, List<ActiveAlert> active, List<Cleared
     /**
      * Per-cycle numbers, so it is visible whether resolution is working at all.
      *
-     * @param trafficAdvisories predicted proximity involving a VFR aircraft (squawk 1200). These
+     * @param trafficAdvisories predicted proximity involving a VFR aircraft (squawk 1200) or a
+     *                          helicopter (emitter category 8). These
      *                          get traffic information, not separation, so they are counted but
      *                          not resolved.
      * @param towerSuppressed   predicted proximity with both aircraft inside tower airspace near
