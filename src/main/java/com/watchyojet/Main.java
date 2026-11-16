@@ -42,7 +42,7 @@ public class Main {
             long now = System.currentTimeMillis();
 
             if (DEMO_MODE) {
-                if (now - lastDemoResetTime > DEMO_RESET_MS) {
+                if (lastDemoResetTime == Long.MIN_VALUE || now - lastDemoResetTime >= DEMO_RESET_MS) {
                     manager.reset(DemoScenario.build());
                     System.out.println("\n[DEMO] Scenario reset. Tracking "
                             + manager.getAircrafts().size() + " aircraft.");
