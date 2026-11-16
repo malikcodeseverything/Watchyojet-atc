@@ -40,10 +40,18 @@ public class ATCEngine {
     }
 
     public void runCycle(List<Aircraft> aircrafts) {
+        runCycle(aircrafts, true);
+    }
 
+    public void runCycle(List<Aircraft> aircrafts, boolean applyManeuvers) {
         movement.updatePositions(aircrafts);
 
-        List<Conflict> conflicts = detector.detectConflicts(aircrafts);
+        List<Conflict> conflicts = detector.detectConflicts(aircrafts, applyManeuvers);
+        if (!applyManeuvers) {
+            notifyConflicts(conflicts, List.of());
+            updateMap(aircrafts);
+            return;
+        }
 
         if (conflicts.isEmpty()) {
             conflictPersistence.clear();

@@ -22,7 +22,9 @@ mvn javafx:run -Dwatchyojet.demo=true
 
 The map opens on Philadelphia. The scripted scenario starts with ten aircraft
 and three predicted conflict pairs. Open the conflict panel and resolution history to follow the encounters.
-The scenario restarts every minute. Demo traffic runs without an OpenSky account
+The conflicts are visible for eight seconds before the simulator tries its
+maneuvers. Use **Simulation → Replay demo** to restart, or wait for the
+automatic one-minute reset. Demo traffic runs without an OpenSky account
 or a live feed.
 
 To try live traffic, run `mvn javafx:run`. The map labels OpenSky traffic,

@@ -2,11 +2,11 @@ package com.watchyojet;
 
 
 import javafx.concurrent.Task;
+import javafx.concurrent.Worker;
 import javafx.fxml.FXML;
-import javafx.scene.Scene;
 import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ListView;
-import javafx.scene.control.RadioMenuItem;
+import javafx.scene.control.MenuItem;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
@@ -42,25 +42,42 @@ public class WYJAppController {
     private CheckMenuItem showLogs;
 
     @FXML
-    private RadioMenuItem light;
+    private MenuItem replayDemo;
 
-    public WebEngine webEngine;
+    private WebEngine webEngine;
 
     @FXML
     public void initialize() {
         instance = this;
+        replayDemo.setDisable(!Main.DEMO_MODE);
         webEngine = webView.getEngine();
 
-        URL url = getClass().getResource("/map.html");
-        if (url != null) {
-            webEngine.load(url.toExternalForm());
-        } else log("Map resource is missing; the traffic display cannot start.");
         spawnMainThread.setOnFailed(event -> {
             Throwable error = spawnMainThread.getException();
             String detail = error == null ? "unknown error" : error.getMessage();
             log("Engine stopped unexpectedly: " + detail);
             setDataStatus("ERROR — simulation engine stopped");
         });
+
+        webEngine.getLoadWorker().stateProperty().addListener((observable, previous, state) -> {
+            if (state == Worker.State.SUCCEEDED) {
+                refreshDataStatus();
+                startEngine();
+            } else if (state == Worker.State.FAILED) {
+                log("The traffic map failed to load.");
+                showLogs.setSelected(true);
+                toggleLogs();
+            }
+        });
+
+        URL url = getClass().getResource("/map.html");
+        if (url != null) {
+            webEngine.load(url.toExternalForm());
+        } else {
+            log("Map resource is missing; the traffic display cannot start.");
+            showLogs.setSelected(true);
+            toggleLogs();
+        }
     }
 
     @FXML
@@ -79,12 +96,13 @@ public class WYJAppController {
 
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final AtomicBoolean started = new AtomicBoolean(false);
+    private final AtomicBoolean replayRequested = new AtomicBoolean();
     private volatile String currentDataStatus;
 
     Task<Void> spawnMainThread = new Task<>(){
         @Override
         protected Void call() {
-            Main.run(running);
+            Main.run(running, replayRequested);
             return null;
         }
     };
@@ -108,17 +126,18 @@ public class WYJAppController {
     }
 
     @FXML
-    public void handleThemeChange(){
-        Scene scene = topContainer.getScene();
-        scene.getStylesheets().clear();
-        if(!light.isSelected()){
-            String dark = getClass().getResource("/dark.css").toExternalForm();
-            scene.getStylesheets().add(dark);
-        }else{
-            String lightCss = getClass().getResource("/light.css").toExternalForm();
-            scene.getStylesheets().add(lightCss);
-        }
+    public void replayDemo() {
+        replayRequested.set(true);
+    }
 
+    public void resetDemoDisplay() {
+        Platform.runLater(() -> {
+            try {
+                webEngine.executeScript("resetTrafficDisplay()");
+            } catch (RuntimeException error) {
+                reportWebError("demo reset", error);
+            }
+        });
     }
 
     public void updateAllAircraft(List<Aircraft> aircrafts) {

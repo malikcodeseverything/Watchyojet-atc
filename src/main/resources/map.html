@@ -4,10 +4,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>WatchyoJet — Autonomous ATC</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+<title>WatchyoJet ATC</title>
 <style>
   :root {
     --bg: #f4f1ec;
@@ -47,7 +44,7 @@
   body {
     display: grid;
     grid-template-rows: 60px 1fr 42px;
-    grid-template-columns: 320px 1fr 340px;
+    grid-template-columns: minmax(190px, 23%) minmax(0, 1fr) minmax(235px, 27%);
     grid-template-areas:
       "header header header"
       "sidebar main rightpanel"
@@ -118,6 +115,18 @@
     font-family: 'JetBrains Mono', monospace;
     font-size: 12px;
   }
+  #dataStatusBadge {
+    color: var(--ink);
+    white-space: nowrap;
+    padding: 5px 8px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+  }
+  @media (max-width: 1020px) {
+    header { padding: 0 12px; gap: 12px; }
+    .breadcrumb .crumb:not(.active), .breadcrumb .sep { display: none; }
+  }
+
   .status-dot {
     display: inline-block;
     width: 8px; height: 8px;
@@ -543,12 +552,13 @@
 <body>
 
 <header>
-  <div class="logo">Watchyo<span>Jet</span></div>
+  <div class="logo">Watchyo<span>Jet</span> ATC</div>
   <button class="back-btn" id="backBtn" disabled>← Back</button>
   <nav class="breadcrumb" id="breadcrumb">
     <div class="crumb active" data-level="0">Globe</div>
   </nav>
   <div class="header-right">
+    <span id="dataStatusBadge" role="status">Starting</span>
     <div id="clockUTC">00:00:00 UTC</div>
   </div>
 </header>
@@ -606,7 +616,7 @@
 
 <aside class="right-panel">
   <div class="panel-section" id="conflictPanelSection" style="display:none">
-    <div class="panel-title" style="color:var(--danger)">ACTIVE CONFLICTS <span class="count" id="conflictCount">0</span></div>
+    <div class="panel-title" style="color:var(--danger)">CONFLICT STATUS <span class="count" id="conflictCount">0</span></div>
     <div id="conflictList"></div>
   </div>
   <div class="panel-section" id="resLogSection" style="display:none">
@@ -630,7 +640,6 @@
   <div class="ticker"><span class="label">ZOOM:</span><span class="value" id="zoomLabel">1.0×</span></div>
   <div class="ticker"><span class="label">VISIBLE:</span><span class="value" id="visibleCount">0</span></div>
   <div class="ticker"><span class="label">SELECTED:</span><span class="value" id="selectedLabel">—</span></div>
-  <div class="ticker" style="margin-left:auto"><span class="label">WATCHYOJET v0.4.0 · AUTONOMOUS ATC</span></div>
 </footer>
 
 <script>
@@ -1869,8 +1878,8 @@ function drawAircraft(a) {
   if (showTelemetry) {
     ctx.fillStyle = "#5a6370";
     ctx.font = "500 9px 'JetBrains Mono', monospace";
-    ctx.fillText(`FL${String(Math.floor(a.alt/100)).padStart(3,'0')} ${a.spd}kt`, labelX + 1, labelY + 13);
-    ctx.fillText(`HDG ${String(a.hdg).padStart(3,'0')}°`, labelX + 1, labelY + 24);
+    ctx.fillText(`${formatAltitude(a.alt)} · ${a.spd} kt`, labelX + 1, labelY + 13);
+    ctx.fillText(`TRK ${String(a.hdg).padStart(3,'0')}°`, labelX + 1, labelY + 24);
   }
   ctx.restore();
 }
@@ -2125,7 +2134,7 @@ function renderNearbyList() {
       <span class="name" style="font-family:'JetBrains Mono',monospace;font-size:12px">${escapeHtml(a.callsign)}</span>
       <span class="meta" style="display:flex;gap:8px;align-items:center">
         <span style="width:6px;height:6px;border-radius:50%;background:${aircraftColor(a)}"></span>
-        FL${String(Math.floor(a.alt/100)).padStart(3,'0')}
+        ${formatAltitude(a.alt)}
       </span>
     </div>
   `).join('');
@@ -2233,6 +2242,11 @@ const resolutionHistory = [];
 const RES_HISTORY_MAX  = 10;
 const RES_HISTORY_TTL  = 30000; // ms
 
+function formatAltitude(feet) {
+  if (feet >= 18000) return 'FL' + String(Math.floor(feet / 100)).padStart(3, '0');
+  return Math.round(feet).toLocaleString() + ' ft';
+}
+
 function _fmtResAge(tsMs) {
   const s = Math.floor((Date.now() - tsMs) / 1000);
   return s < 60 ? s + 's ago' : Math.floor(s / 60) + 'm ago';
@@ -2258,7 +2272,7 @@ function renderResolutionHistory() {
     const flStr = e.actionText
       ? `<span class="res-action">${escapeHtml(e.movedCs)} → ${escapeHtml(e.actionText)}</span>`
       : e.movedCs && e.newAlt
-        ? `<span class="res-action">${escapeHtml(e.movedCs)} → FL${String(Math.floor(e.newAlt / 100)).padStart(3, '0')} (${Math.round(e.newAlt).toLocaleString()} ft)</span>`
+        ? `<span class="res-action">${escapeHtml(e.movedCs)} → ${formatAltitude(e.newAlt)}</span>`
         : '<span class="res-action">separation applied</span>';
     const d = new Date(e.ts);
     const hh = String(d.getHours()).padStart(2,'0');
@@ -2310,6 +2324,7 @@ function flushAircraftSnapshot() {
   document.getElementById('feedCount').textContent = feedAircraft.size;
   _cachedVisible = null;
   if (state.selectedAircraftId !== null) renderAircraftDetail();
+  else renderNearbyList();
   return true;
 }
 
@@ -2340,9 +2355,9 @@ function renderConflictPanel() {
     const resLine = v.actionText
       ? `<div class="resolution-detail">↳ ${escapeHtml(v.movedCs)} → ${escapeHtml(v.actionText)}</div>`
       : v.movedCs && v.newAlt
-        ? `<div class="resolution-detail">↳ ${escapeHtml(v.movedCs)} → FL${String(Math.floor(v.newAlt/100)).padStart(3,'0')} (${Math.round(v.newAlt).toLocaleString()} ft)</div>`
+        ? `<div class="resolution-detail">↳ ${escapeHtml(v.movedCs)} → ${formatAltitude(v.newAlt)}</div>`
         : '';
-    return `<div class="conflict-item resolved-item"><div class="conflict-row"><span class="alert-tag resolved-tag">✓ OK</span>${escapeHtml(cs1)} ↔ ${escapeHtml(cs2)}</div>${resLine}</div>`;
+    return `<div class="conflict-item resolved-item"><div class="conflict-row"><span class="alert-tag resolved-tag">CLEARED</span>${escapeHtml(cs1)} ↔ ${escapeHtml(cs2)}</div>${resLine}</div>`;
   }).join('');
 
   list.innerHTML = activeHtml + resolvedHtml;
@@ -2385,32 +2400,31 @@ function logATCEvent(message) {
   setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 500); }, 4000);
 }
 
+function resetTrafficDisplay() {
+  feedAircraft.clear();
+  pendingAircraft = null;
+  for (const timer of conflictTimers.values()) clearTimeout(timer);
+  conflictTimers.clear();
+  conflictSet.clear();
+  resolvedSet.clear();
+  resolutionHistory.length = 0;
+  state.selectedAircraftId = null;
+  state.hoverAircraftId = null;
+  _cachedVisible = null;
+  document.getElementById('feedCount').textContent = '0';
+  renderConflictPanel();
+  renderResolutionHistory();
+  renderAircraftDetail();
+  _needsRedraw = true;
+}
+
 function setDataStatus(status) {
-  let el = document.getElementById('dataStatusBadge');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'dataStatusBadge';
-    el.style.cssText = 'position:fixed;top:12px;right:16px;background:rgba(20,20,40,.92);color:#fff;font-family:monospace;font-size:11px;padding:7px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.25);z-index:9999';
-    document.body.appendChild(el);
-  }
+  const el = document.getElementById('dataStatusBadge');
   const mode = status.split(' ')[0];
   if (mode === 'LIVE' || mode === 'STALE' || mode === 'DEMO') {
     const source = mode === 'DEMO' ? 'DEMO' : 'OPENSKY';
     if (source !== feedSource) {
-      feedAircraft.clear();
-      pendingAircraft = null;
-      for (const timer of conflictTimers.values()) clearTimeout(timer);
-      conflictTimers.clear();
-      conflictSet.clear();
-      resolvedSet.clear();
-      resolutionHistory.length = 0;
-      state.selectedAircraftId = null;
-      state.hoverAircraftId = null;
-      _cachedVisible = null;
-      document.getElementById('feedCount').textContent = '0';
-      renderConflictPanel();
-      renderResolutionHistory();
-      renderAircraftDetail();
+      resetTrafficDisplay();
     }
     feedSource = source;
     feedMode = mode;
@@ -2418,8 +2432,9 @@ function setDataStatus(status) {
       mode === 'DEMO' ? 'Demo tracks' : mode === 'STALE' ? 'Cached tracks' : 'OpenSky tracks';
     _needsRedraw = true;
   }
-  el.textContent = status;
-  el.style.borderColor = status.startsWith('LIVE') ? '#42d392' : status.startsWith('STALE') ? '#f6c85f' : '#ef6b73';
+  el.textContent = {LIVE: 'OpenSky live', STALE: 'OpenSky cached', DEMO: 'Demo traffic', ERROR: 'Engine error'}[mode] ?? status;
+  el.title = status;
+  el.style.borderColor = {LIVE: 'var(--ok)', STALE: 'var(--warn)', ERROR: 'var(--danger)'}[mode] ?? 'var(--line)';
 }
 
 const _baseGetVisible = getVisibleAircraft;

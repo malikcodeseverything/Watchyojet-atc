@@ -13,13 +13,14 @@ public class Main {
 
     private static final long API_COOLDOWN_MS   = 12_000;
     private static final long DEMO_RESET_MS     = 60_000; // reset scenario every 60 s
+    private static final long DEMO_PREVIEW_MS   = 8_000;
     private static final long MAX_STALE_MS      = 60_000;
 
     public static void main(String[] args) {
-        run(new AtomicBoolean(true));
+        run(new AtomicBoolean(true), new AtomicBoolean());
     }
 
-    public static void run(AtomicBoolean running) {
+    public static void run(AtomicBoolean running, AtomicBoolean replayRequested) {
 
         AircraftManager manager = new AircraftManager();
         OpenSkyFetcher  fetcher = new OpenSkyFetcher();
@@ -33,7 +34,7 @@ public class Main {
         String nominalStatus = null;
         boolean fallbackDemoLoaded = false;
 
-        System.out.println("Initializing WatchyoJet Autonomous ATC Shadow Mode...");
+        System.out.println("Initializing WatchyoJet ATC simulation...");
         if (DEMO_MODE) {
             System.out.println("[DEMO] Running controlled scenario — 10 aircraft, 3 conflict pairs");
             nominalStatus = "DEMO — deterministic offline traffic";
@@ -44,8 +45,12 @@ public class Main {
             long now = System.currentTimeMillis();
 
             if (DEMO_MODE) {
-                if (lastDemoResetTime == Long.MIN_VALUE || now - lastDemoResetTime >= DEMO_RESET_MS) {
+                if (replayRequested.getAndSet(false) || lastDemoResetTime == Long.MIN_VALUE
+                        || now - lastDemoResetTime >= DEMO_RESET_MS) {
                     manager.reset(DemoScenario.build());
+                    engine = new ATCEngine();
+                    WYJAppController controller = WYJAppController.getInstance();
+                    if (controller != null) controller.resetDemoDisplay();
                     System.out.println("\n[DEMO] Scenario reset. Tracking "
                             + manager.getAircrafts().size() + " aircraft.");
                     lastDemoResetTime = now;
@@ -91,7 +96,8 @@ public class Main {
             }
 
             try {
-                engine.runCycle(manager.getAircrafts());
+                boolean applyManeuvers = !DEMO_MODE || now - lastDemoResetTime >= DEMO_PREVIEW_MS;
+                engine.runCycle(manager.getAircrafts(), applyManeuvers);
                 if (currentStatus != null && currentStatus.startsWith("ERROR")
                         && nominalStatus != null) {
                     currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);

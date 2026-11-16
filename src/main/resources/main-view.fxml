@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.CheckMenuItem?>
+<?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.Menu?>
+<?import javafx.scene.control.MenuBar?>
+<?import javafx.scene.control.MenuItem?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.web.WebView?>
+
+<VBox fx:id="topContainer" xmlns="http://javafx.com/javafx/21" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.watchyojet.WYJAppController">
+    <MenuBar>
+        <Menu text="File">
+            <MenuItem text="Close" onAction="#handleClose" />
+        </Menu>
+        <Menu text="Simulation">
+            <MenuItem fx:id="replayDemo" text="Replay demo" onAction="#replayDemo" />
+        </Menu>
+        <Menu text="View">
+            <CheckMenuItem fx:id="showLogs" text="Event log" onAction="#toggleLogs" />
+        </Menu>
+    </MenuBar>
+    <WebView fx:id="webView" VBox.vgrow="ALWAYS" />
+    <ListView fx:id="logList" prefHeight="150" managed="false" visible="false" stylesheets="@log-style.css" />
+</VBox>

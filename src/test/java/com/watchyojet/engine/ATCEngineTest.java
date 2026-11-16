@@ -53,6 +53,19 @@ class ATCEngineTest {
         assertTrue(detector.detectConflicts(tracks, false).isEmpty());
     }
 
+    @Test
+    void preservesScriptedConflictsDuringTheDemoPreview() {
+        var tracks = DemoScenario.build();
+        var engine = new ATCEngine();
+        var detector = new ConflictDetector();
+
+        engine.runCycle(tracks, false);
+        assertEquals(3, detector.detectConflicts(tracks, false).size());
+
+        engine.runCycle(tracks);
+        assertTrue(detector.detectConflicts(tracks, false).isEmpty());
+    }
+
     private static Aircraft aircraft(String callsign, double latitude, double altitude) {
         return new Aircraft(callsign, latitude, -75, altitude, 300, 0, AircraftType.B737);
     }
