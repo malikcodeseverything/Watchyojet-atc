@@ -1,135 +1,87 @@
 # WatchyoJet ATC
 
-[![Build and test](https://github.com/malikcodeseverything/watchyojet-atc/actions/workflows/build.yml/badge.svg)](https://github.com/malikcodeseverything/watchyojet-atc/actions/workflows/build.yml)
+[![Build and test](https://github.com/malikcodeseverything/Watchyojet-atc/actions/workflows/build.yml/badge.svg)](https://github.com/malikcodeseverything/Watchyojet-atc/actions/workflows/build.yml)
 
-WatchyoJet is an educational, real-time air-traffic conflict detection and
-resolution simulator focused on the Philadelphia terminal area. It combines
-live public OpenSky state vectors with a two-second simulation loop, closest
-point of approach (CPA) prediction, and an interactive JavaFX/WebView display.
+WatchyoJet ATC is a Java desktop simulator for air traffic conflict detection
+and resolution around Philadelphia. It predicts where two aircraft will come
+closest, groups related conflicts, and tests simulated changes in altitude,
+track, or speed.
 
-> **Safety notice:** WatchyoJet is a student-built simulation and portfolio
-> project. It is not certified aviation software, must not be used for
-> operational decision-making, and never transmits instructions to aircraft.
+![WatchyoJet ATC desktop interface from the project demo](NEW_WatchyojetGUI.jpg)
 
-![WatchyoJet interface](NEW_WatchyojetGUI.jpg)
+## Run the demo
 
-## Highlights
-
-- Tracks public live traffic around Philadelphia when OpenSky is available.
-- Retains the last-known snapshot during transient API failures.
-- Labels cached traffic as stale and switches to demo traffic after 60 seconds.
-- Loads a deterministic demo scenario when no initial live snapshot is available.
-- Predicts converging traffic up to ten minutes ahead using CPA geometry.
-- Groups related conflicts before proposing altitude, heading, or speed changes.
-- Refuses to invent a maneuver when no candidate passes the safety checks.
-- Displays live aircraft, conflicts, resolutions, and an event history.
-- Runs automated tests on Linux, macOS, and Windows through GitHub Actions.
-
-## Run locally
-
-Requirements:
-
-- A full JDK 21 or newer
-- Maven 3.8 or newer
+Install a full JDK 21 or newer and Maven 3.8 or newer. Maven downloads the
+JavaFX and Jackson dependencies on the first build.
 
 ```bash
-git clone https://github.com/malikcodeseverything/watchyojet-atc.git
-cd watchyojet-atc
-mvn javafx:run
-```
-
-Live mode is the default. To run the deterministic offline scenario:
-
-```bash
+git clone https://github.com/malikcodeseverything/Watchyojet-atc.git
+cd Watchyojet-atc
 mvn javafx:run -Dwatchyojet.demo=true
 ```
 
-The first Maven run downloads the required JavaFX and Jackson dependencies.
+The scripted scenario starts with ten aircraft and three predicted conflict
+pairs. Open the conflict panel and resolution history to follow the encounters.
+The scenario restarts every minute. Demo traffic runs without an OpenSky account
+or a live feed.
 
-## Test and build
-
-Run the complete test suite:
-
-```bash
-mvn clean verify
-```
-
-Create a platform-specific runtime image:
-
-```bash
-mvn clean verify javafx:jlink
-```
-
-Create a self-contained application image for the current operating system:
-
-```bash
-./scripts/package-app.sh
-```
-
-The result is placed in `target/dist`. Packaging must run separately on each
-target operating system because JavaFX includes platform-native components.
+To try live traffic, run `mvn javafx:run`. The map labels OpenSky traffic,
+cached tracks, and the scripted fallback separately. Live coverage and request
+quotas depend on OpenSky.
 
 ## How it works
 
 ```text
-OpenSky state vectors / demo scenario
-                 |
-                 v
-          AircraftManager
-                 |
-       two-second engine cycle
-                 |
-     +-----------+------------+
-     |           |            |
- movement   CPA detection   resolution search
-     |           |            |
-     +-----------+------------+
-                 |
-                 v
-       JavaFX + embedded WebView
+OpenSky or demo fixture
+        ↓
+AircraftManager
+        ↓
+Movement → closest point of approach → maneuver search → conflict recheck
+        ↓
+JavaFX controller → WebView traffic display
 ```
 
-The resolution output represents hypothetical shadow-mode decisions. Every
-fresh OpenSky observation restores the reported aircraft state so simulated
-commands cannot be mistaken for real changes.
+The simulator uses a 5 NM horizontal and 1,000 ft vertical alert threshold,
+with a lookahead of up to ten minutes. It rechecks the original pairs after
+applying simulated maneuvers and reports conflicts that remain or appear.
+Fresh OpenSky data restores the observed aircraft state.
 
-The post-resolution check reports any additional predicted conflicts but does
-not roll back hypothetical commands. This is appropriate only for a shadow-mode
-demonstrator and is another reason the project must not be used operationally.
-Speed thresholds use OpenSky ground speed because indicated airspeed is not
-provided by the state-vector feed.
+WatchyoJet ATC is an educational simulation. Maneuvers apply instantly to the
+simulated tracks. It models airborne conflicts and does not issue real
+clearances or transmit instructions to aircraft. See the
+[system documentation](Documentation/WATCHYOJET_DOCS.md) for the data flow,
+limitations, and comparison with FAA procedures.
 
-## Reliability and security
+## Build and test
 
-- Network requests use connect and response timeouts.
-- Malformed or physically implausible state vectors are rejected.
-- External callsigns and UI messages are JSON-encoded at the JavaScript boundary.
-- CI receives read-only repository permissions.
-- Dependabot monitors Maven and GitHub Actions dependencies.
-- The app does not require API keys or collect user information.
+```bash
+mvn clean verify
+mvn clean verify javafx:jlink
+```
+
+GitHub Actions runs the test suite on Linux, macOS, and Windows. The
+`javafx:jlink` goal creates a platform-specific runtime in `target/watchyojet`.
+On macOS or Linux, run `./scripts/package-app.sh` with a full JDK to build
+an application image in `target/dist`.
 
 ## Project structure
 
-```text
-src/main/java/com/watchyojet/
-  engine/       conflict prediction and resolution
-  manager/      aircraft state and OpenSky ingestion
-  model/        aircraft, conflict, and resolution models
-  simulation/   movement and deterministic demo traffic
-src/main/resources/
-  map.html      interactive traffic display
-src/test/java/
-  regression and geometry tests
-```
+| Path | Contents |
+| --- | --- |
+| `src/main/java/com/watchyojet/engine/` | Conflict prediction, maneuver search, and simulation cycle |
+| `src/main/java/com/watchyojet/manager/` | Aircraft state and OpenSky ingestion |
+| `src/main/java/com/watchyojet/model/` | Aircraft, conflict, and maneuver models |
+| `src/main/java/com/watchyojet/simulation/` | Movement and scripted encounters |
+| `src/main/resources/` | JavaFX layout, styles, and the WebView map |
+| `src/test/java/` | Movement, conflict, resolution, and demo regression tests |
 
-## Attribution
+## Project credits
 
-WatchyoJet began as a Temple University CIS 3296 team project in the
-[`cis3296s26`](https://github.com/cis3296s26/final-project-05-watchyojet)
-organization. The preserved Git history records contributions from Hamza Malik,
-Brandon Son, Dylan Vo, and the contributors represented by the
-`RevengeChivalry` account. This personal fork is maintained by Hamza Malik for
-portfolio hardening, testing, packaging, and deployment work.
+WatchyoJet began as a Temple University CIS 3296 team project. Hamza Malik
+maintains this portfolio fork and led the work to stabilize the demo, test
+the conflict engine, and prepare the desktop build for release. The Git
+history preserves contributions from Hamza Malik, Brandon Son, Dylan Vo,
+and the contributors behind the `RevengeChivalry` account. [Original course repository](https://github.com/cis3296s26/final-project-05-watchyojet)
 
-No open-source license has been added because this originated as a team course
-project. Reuse requires permission from the relevant contributors.
+No open-source license has been added. Reuse requires permission from the
+relevant contributors.

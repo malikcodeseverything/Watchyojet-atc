@@ -11,6 +11,7 @@
     <description>Educational air-traffic conflict detection and resolution simulator</description>
 
     <properties>
+        <watchyojet.demo>false</watchyojet.demo>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -62,6 +63,9 @@
                     <id>default-cli</id>
                     <configuration>
                         <mainClass>com.watchyojet/com.watchyojet.WYJApp</mainClass>
+                        <options>
+                            <option>-Dwatchyojet.demo=${watchyojet.demo}</option>
+                        </options>
                         <launcher>watchyojet</launcher>
                         <jlinkImageName>watchyojet</jlinkImageName>
                         <stripDebug>true</stripDebug>
