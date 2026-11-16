@@ -7,14 +7,7 @@ and resolution around Philadelphia. It predicts where two aircraft will come
 closest, groups related conflicts, and tests simulated changes in altitude,
 track, or speed.
 
-![WatchYoJet in light mode with live Philadelphia-area traffic and conflict advisories](Documentation/images/watchyojet-light.png)
-
-<details>
-<summary>View dark mode</summary>
-
 ![WatchYoJet in dark mode with live Philadelphia-area traffic and conflict advisories](Documentation/images/watchyojet-dark.png)
-
-</details>
 
 ## Download
 
