@@ -1,6 +1,7 @@
 package com.watchyojet.engine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -8,6 +9,8 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
+import com.watchyojet.engine.CycleReport.ActiveAlert;
+import com.watchyojet.engine.CycleReport.Advice;
 import com.watchyojet.model.Aircraft;
 import com.watchyojet.model.AircraftType;
 import com.watchyojet.simulation.DemoScenario;
@@ -48,9 +51,11 @@ class ATCEngineTest {
         var detector = new ConflictDetector();
         assertEquals(3, detector.detectConflicts(tracks, false).size());
 
-        new ATCEngine().runCycle(tracks);
+        CycleReport report = new ATCEngine().runCycle(tracks);
 
         assertTrue(detector.detectConflicts(tracks, false).isEmpty());
+        assertEquals(3, report.cleared().size());
+        assertTrue(report.cleared().stream().allMatch(CycleReport.ClearedAlert::clearedByManeuver));
     }
 
     @Test
@@ -59,11 +64,117 @@ class ATCEngineTest {
         var engine = new ATCEngine();
         var detector = new ConflictDetector();
 
-        engine.runCycle(tracks, false);
+        CycleReport preview = engine.runCycle(tracks, CycleMode.DETECT_ONLY);
         assertEquals(3, detector.detectConflicts(tracks, false).size());
+        assertTrue(preview.active().stream().allMatch(a -> a.advice() == Advice.NOT_EVALUATED));
 
         engine.runCycle(tracks);
         assertTrue(detector.detectConflicts(tracks, false).isEmpty());
+    }
+
+    @Test
+    void advisoryModeNeverChangesObservedTracks() {
+        var tracks = DemoScenario.build();
+        double[][] before = snapshot(tracks);
+
+        CycleReport report = new ATCEngine().runCycle(tracks, CycleMode.ADVISE);
+
+        for (int i = 0; i < tracks.size(); i++) {
+            assertEquals(before[i][0], tracks.get(i).getAltitude());
+            assertEquals(before[i][1], tracks.get(i).getHeading());
+            assertEquals(before[i][2], tracks.get(i).getSpeed());
+        }
+        assertEquals(3, new ConflictDetector().detectConflicts(tracks, false).size());
+        assertEquals(3, report.active().size());
+        assertTrue(report.cleared().isEmpty());
+        for (ActiveAlert alert : report.active()) {
+            assertEquals(Advice.CLEARS_IN_SIMULATION, alert.advice());
+            assertFalse(alert.instruction().isEmpty());
+        }
+    }
+
+    @Test
+    void keepsAlertIdentityAcrossRefreshes() {
+        var tracks = DemoScenario.build();
+        var engine = new ATCEngine();
+
+        CycleReport first = engine.runCycle(tracks, CycleMode.ADVISE, 1_000);
+        CycleReport second = engine.runCycle(tracks, CycleMode.ADVISE, 3_000);
+
+        assertEquals(3, first.counters().newAlerts());
+        assertEquals(0, second.counters().newAlerts());
+        assertTrue(second.active().stream().allMatch(a -> a.firstSeenMillis() == 1_000));
+    }
+
+    @Test
+    void clearsAnAdvisoryOnlyWhenTheObservedTracksSeparate() {
+        Aircraft north = new Aircraft("N1", 40.00, -75.00, 30_000, 300, 0, AircraftType.B737);
+        Aircraft south = new Aircraft("S1", 40.20, -75.00, 30_500, 300, 180, AircraftType.B737);
+        List<Aircraft> tracks = List.of(north, south);
+        var engine = new ATCEngine();
+
+        engine.runCycle(tracks, CycleMode.ADVISE, 0);
+        CycleReport stillPredicted = engine.runCycle(tracks, CycleMode.ADVISE, 2_000);
+        assertEquals(1, stillPredicted.active().size());
+        assertTrue(stillPredicted.cleared().isEmpty());
+
+        // A fresh observation shows the aircraft really climbed.
+        south.setAltitude(33_000);
+        CycleReport separated = engine.runCycle(tracks, CycleMode.ADVISE, 4_000);
+
+        assertTrue(separated.active().isEmpty());
+        assertEquals(1, separated.cleared().size());
+        assertFalse(separated.cleared().get(0).clearedByManeuver());
+    }
+
+    @Test
+    void acceptsSafeGroupsEvenWhenAnotherGroupIsRejected() {
+        // Group X: A must descend to FL290, straight into C's path, so its proposal is rejected.
+        Aircraft a = new Aircraft("A", 40.00, -75.00, 30_000, 300, 0, AircraftType.B737);
+        Aircraft b = new Aircraft("B", 40.20, -75.00, 30_500, 300, 180, AircraftType.B737);
+        Aircraft c = new Aircraft("C", 40.40, -75.00, 29_000, 300, 180, AircraftType.B737);
+        // Group Y: an unrelated encounter 45 NM away with a clean fix.
+        Aircraft d = new Aircraft("D", 40.00, -76.00, 20_000, 300, 0, AircraftType.B737);
+        Aircraft e = new Aircraft("E", 40.20, -76.00, 20_500, 300, 180, AircraftType.B737);
+
+        CycleReport report = new ATCEngine().runCycle(List.of(a, b, c, d, e), CycleMode.ADVISE);
+
+        assertEquals(2, report.counters().groups());
+        assertEquals(1, report.counters().acceptedGroups());
+        assertEquals(1, report.counters().rejectedGroups());
+        assertEquals(Advice.REJECTED_NEW_CONFLICT, adviceFor(report, "A", "B"));
+        assertEquals(Advice.CLEARS_IN_SIMULATION, adviceFor(report, "D", "E"));
+    }
+
+    @Test
+    void phrasesProposalsAsInstructions() {
+        Aircraft jet = new Aircraft("DAL123", 40.0, -75.0, 12_000, 280, 90, AircraftType.B737);
+        assertEquals("DAL123 climb and maintain 13,000 ft",
+                Instructions.describe(new com.watchyojet.model.Resolution(jet, 13_000)));
+        assertEquals("DAL123 descend and maintain FL240",
+                Instructions.describe(new com.watchyojet.model.Resolution(
+                        new Aircraft("DAL123", 40.0, -75.0, 25_000, 280, 90, AircraftType.B737), 24_000)));
+        assertEquals("DAL123 turn left heading 060",
+                Instructions.describe(com.watchyojet.model.Resolution.forHeading(jet, 60)));
+        assertEquals("DAL123 turn right heading 120",
+                Instructions.describe(com.watchyojet.model.Resolution.forHeading(jet, 120)));
+        assertEquals("DAL123 reduce speed to 252 knots",
+                Instructions.describe(com.watchyojet.model.Resolution.forSpeed(jet, 252)));
+    }
+
+    private static Advice adviceFor(CycleReport report, String id1, String id2) {
+        return report.active().stream()
+                .filter(alert -> alert.pairKey().equals(id1 + ":" + id2))
+                .findFirst().orElseThrow().advice();
+    }
+
+    private static double[][] snapshot(List<Aircraft> tracks) {
+        double[][] values = new double[tracks.size()][];
+        for (int i = 0; i < tracks.size(); i++) {
+            Aircraft t = tracks.get(i);
+            values[i] = new double[]{t.getAltitude(), t.getHeading(), t.getSpeed()};
+        }
+        return values;
     }
 
     private static Aircraft aircraft(String callsign, double latitude, double altitude) {

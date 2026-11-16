@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.watchyojet.engine.ATCEngine;
+import com.watchyojet.engine.CycleListener;
+import com.watchyojet.engine.CycleMode;
 import com.watchyojet.manager.AircraftManager;
 import com.watchyojet.manager.OpenSkyFetcher;
 import com.watchyojet.simulation.DemoScenario;
@@ -25,7 +27,7 @@ public class Main {
 
         AircraftManager manager = new AircraftManager();
         OpenSkyFetcher  fetcher = new OpenSkyFetcher();
-        ATCEngine       engine  = new ATCEngine();
+        ATCEngine       engine  = newEngine();
         long lastApiFetchTime = -API_COOLDOWN_MS;
         long apiPollDelay = API_COOLDOWN_MS;
         boolean liveFetchFailed = false;
@@ -44,7 +46,7 @@ public class Main {
             if (demoMode == null || demoMode != requestedMode) {
                 demoMode = requestedMode;
                 manager.reset(List.of());
-                engine = new ATCEngine();
+                engine = newEngine();
                 lastDemoResetTime = Long.MIN_VALUE;
                 lastSuccessfulFetchTime = Long.MIN_VALUE;
                 liveFetchFailed = !demoMode && now - lastApiFetchTime < apiPollDelay;
@@ -58,7 +60,7 @@ public class Main {
                 if (replayRequested.getAndSet(false) || lastDemoResetTime == Long.MIN_VALUE
                         || now - lastDemoResetTime >= DEMO_RESET_MS) {
                     manager.reset(DemoScenario.build());
-                    engine = new ATCEngine();
+                    engine = newEngine();
                     WYJAppController controller = WYJAppController.getInstance();
                     if (controller != null) controller.resetDemoDisplay();
                     System.out.println("\n[DEMO] Scenario reset. Tracking "
@@ -81,6 +83,7 @@ public class Main {
                         System.out.println("[SYSTEM] Airspace refreshed. Tracking "
                                 + manager.getAircrafts().size() + " live flights.");
                         lastSuccessfulFetchTime = now;
+                        if (fallbackDemoLoaded) engine = newEngine();
                         fallbackDemoLoaded = false;
                         nominalStatus = "LIVE — OpenSky snapshot received";
                     } else {
@@ -96,6 +99,7 @@ public class Main {
                         nominalStatus = "STALE — using a recent cached OpenSky snapshot";
                     } else {
                         manager.reset(DemoScenario.build());
+                        engine = newEngine();
                         fallbackDemoLoaded = true;
                         nominalStatus = "DEMO — live data unavailable or older than 60 seconds";
                         System.out.println("[SYSTEM] Live data unavailable or stale; loaded demo traffic.");
@@ -107,8 +111,8 @@ public class Main {
             }
 
             try {
-                boolean applyManeuvers = !demoMode || now - lastDemoResetTime >= DEMO_PREVIEW_MS;
-                engine.runCycle(manager.getAircrafts(), applyManeuvers);
+                engine.runCycle(manager.getAircrafts(),
+                        cycleMode(demoMode, fallbackDemoLoaded, now - lastDemoResetTime));
                 if (currentStatus != null && currentStatus.startsWith("ERROR")
                         && nominalStatus != null) {
                     currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);
@@ -126,6 +130,21 @@ public class Main {
                 break;
             }
         }
+    }
+
+    /**
+     * Observed OpenSky traffic is only ever advised on. Scripted traffic, including the
+     * fallback demo, applies maneuvers once the opening preview has passed.
+     */
+    static CycleMode cycleMode(boolean demoMode, boolean fallbackDemoLoaded, long sinceDemoReset) {
+        if (fallbackDemoLoaded) return CycleMode.SIMULATE;
+        if (!demoMode) return CycleMode.ADVISE;
+        return sinceDemoReset >= DEMO_PREVIEW_MS ? CycleMode.SIMULATE : CycleMode.DETECT_ONLY;
+    }
+
+    private static ATCEngine newEngine() {
+        CycleListener listener = WYJAppController.getInstance();
+        return new ATCEngine(listener);
     }
 
     private static String publishStatusIfChanged(String current, String next) {

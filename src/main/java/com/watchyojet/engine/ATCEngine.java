@@ -7,133 +7,243 @@ import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
-import com.watchyojet.WYJAppController;
+import com.watchyojet.engine.CycleReport.ActiveAlert;
+import com.watchyojet.engine.CycleReport.Advice;
+import com.watchyojet.engine.CycleReport.ClearedAlert;
+import com.watchyojet.engine.CycleReport.Counters;
 import com.watchyojet.model.Aircraft;
 import com.watchyojet.model.Conflict;
 import com.watchyojet.model.Resolution;
 import com.watchyojet.simulation.MovementEngine;
 
+/**
+ * Runs one detection and resolution cycle at a time.
+ *
+ * <p>Alerts are tracked by aircraft pair, so the same encounter keeps its identity and
+ * first-seen time across OpenSky refreshes. Each group of related conflicts gets its own
+ * trial: a group is accepted when its maneuvers create no new predicted conflict, and
+ * rejected otherwise, without affecting the other groups.
+ *
+ * <p>In {@link CycleMode#ADVISE} the tracks are never changed. In
+ * {@link CycleMode#SIMULATE} accepted maneuvers are applied to the simulated tracks.
+ */
 public class ATCEngine {
 
-    private final ConflictDetector  detector;
-    private final ResolutionEngine  resolver;
-    private final MovementEngine    movement;
+    // cooldown prevents re-resolving the same simulated aircraft every cycle
+    private static final long COOLDOWN_MS = 15_000;
 
-    // cooldown prevents re-resolving the same aircraft every cycle
-    private final Map<String, Long>    resolutionCooldown  = new ConcurrentHashMap<>();
-    private static final long          COOLDOWN_MS         = 15_000;
+    // escalation: if a simulated conflict persists > ESCALATE_CYCLES, search wider maneuvers
+    private static final int ESCALATE_CYCLES = 2;
 
-    // escalation: if a conflict pair persists > ESCALATE_CYCLES, force hard resolution
-    private final Map<String, Integer> conflictPersistence = new ConcurrentHashMap<>();
-    private static final int           ESCALATE_CYCLES     = 2;
+    private final ConflictDetector detector;
+    private final ResolutionEngine resolver;
+    private final MovementEngine movement;
+    private final CycleListener listener;
+
+    private final Map<String, Long> resolutionCooldown = new HashMap<>();
+    private final Map<String, TrackedAlert> tracked = new LinkedHashMap<>();
+
+    private record TrackedAlert(String id1, String id2, String callsign1, String callsign2,
+                                long firstSeenMillis, int cycles) {
+        TrackedAlert seenAgain(Conflict conflict) {
+            return new TrackedAlert(id1, id2, conflict.getA1().getCallsign(),
+                    conflict.getA2().getCallsign(), firstSeenMillis, cycles + 1);
+        }
+    }
 
     public ATCEngine() {
+        this(CycleListener.NONE);
+    }
+
+    public ATCEngine(CycleListener listener) {
         this.detector = new ConflictDetector();
         this.resolver = new ResolutionEngine();
         this.movement = new MovementEngine();
+        this.listener = listener == null ? CycleListener.NONE : listener;
     }
 
-    public void runCycle(List<Aircraft> aircrafts) {
-        runCycle(aircrafts, true);
+    /** Runs a simulation cycle that applies accepted maneuvers. */
+    public CycleReport runCycle(List<Aircraft> aircraft) {
+        return runCycle(aircraft, CycleMode.SIMULATE);
     }
 
-    public void runCycle(List<Aircraft> aircrafts, boolean applyManeuvers) {
-        movement.updatePositions(aircrafts);
+    public CycleReport runCycle(List<Aircraft> aircraft, CycleMode mode) {
+        return runCycle(aircraft, mode, System.currentTimeMillis());
+    }
 
-        List<Conflict> conflicts = detector.detectConflicts(aircrafts, applyManeuvers);
-        if (!applyManeuvers) {
-            notifyConflicts(conflicts, List.of());
-            updateMap(aircrafts);
-            return;
-        }
+    CycleReport runCycle(List<Aircraft> aircraft, CycleMode mode, long now) {
+        movement.updatePositions(aircraft);
 
-        if (conflicts.isEmpty()) {
-            conflictPersistence.clear();
-            notifyConflicts(List.of(), List.of());
-            updateMap(aircrafts);
-            return;
-        }
-
-        // ── Persistence tracking ──────────────────────────────────────────────
-        Set<String> activeKeys = new HashSet<>();
-        for (Conflict c : conflicts) activeKeys.add(conflictKey(c));
-        conflictPersistence.keySet().retainAll(activeKeys);
-        for (String key : activeKeys) conflictPersistence.merge(key, 1, Integer::sum);
-
-        Set<String> hardPairs = new HashSet<>();
-        for (Map.Entry<String, Integer> e : conflictPersistence.entrySet()) {
-            if (e.getValue() > ESCALATE_CYCLES) hardPairs.add(e.getKey());
-        }
-        if (!hardPairs.isEmpty()) {
-            System.out.println("[ESCALATE] " + hardPairs.size()
-                    + " conflict pair(s) persisted >" + ESCALATE_CYCLES + " cycles → hard resolution");
-        }
-
-        // global sort: CRITICAL first, then earliest tCPA
+        List<Conflict> conflicts = new ArrayList<>(detector.detectConflicts(aircraft, false));
         conflicts.sort(Comparator.comparing(Conflict::getSeverity)
-                                 .thenComparingDouble(Conflict::getTCPA));
+                .thenComparingDouble(Conflict::getTCPA));
 
-        long now = System.currentTimeMillis();
-        resolutionCooldown.entrySet().removeIf(e -> now - e.getValue() > COOLDOWN_MS * 2);
+        // ── Alert identity across cycles ──────────────────────────────────────
+        Map<String, Conflict> byKey = new LinkedHashMap<>();
+        for (Conflict conflict : conflicts) byKey.putIfAbsent(conflictKey(conflict), conflict);
 
-        // aircraft on cooldown or already resolved this cycle may not be moved
-        Set<String> locked = new HashSet<>();
-        for (Map.Entry<String, Long> e : resolutionCooldown.entrySet()) {
-            if (e.getValue() + COOLDOWN_MS > now) locked.add(e.getKey());
-        }
-
-        // committed[aircraft ID] = {alt, hdg, spd} with NaN = unchanged
-        Map<String, double[]> committed = new HashMap<>();
-
-        List<Resolution> allResolutions = new ArrayList<>();
-
-        for (List<Conflict> cluster : detectClusters(conflicts)) {
-            allResolutions.addAll(resolver.resolveCluster(cluster, aircrafts, committed, locked, hardPairs));
-        }
-
-        Optional<List<Conflict>> trial = validateTrial(aircrafts, conflicts, committed);
-        Map<String, Resolution> appliedByAircraft = new HashMap<>();
-        if (trial.isPresent()) {
-            for (Resolution resolution : allResolutions) {
-                Aircraft aircraft = resolution.getAircraft();
-                applyTrialState(aircraft, committed.get(aircraft.getId()));
-                appliedByAircraft.put(aircraft.getId(), resolution);
-                resolutionCooldown.put(aircraft.getId(), now);
+        List<ClearedAlert> cleared = new ArrayList<>();
+        for (Map.Entry<String, TrackedAlert> entry : tracked.entrySet()) {
+            if (!byKey.containsKey(entry.getKey())) {
+                TrackedAlert gone = entry.getValue();
+                cleared.add(new ClearedAlert(entry.getKey(), gone.id1(), gone.id2(),
+                        gone.callsign1(), gone.callsign2(), ""));
             }
-        } else {
-            System.out.println("[REJECTED] Proposed maneuvers introduced a new predicted conflict.");
+        }
+        tracked.keySet().retainAll(byKey.keySet());
+
+        int newAlerts = 0;
+        for (Map.Entry<String, Conflict> entry : byKey.entrySet()) {
+            Conflict conflict = entry.getValue();
+            TrackedAlert previous = tracked.get(entry.getKey());
+            if (previous == null) {
+                newAlerts++;
+                tracked.put(entry.getKey(), new TrackedAlert(conflict.getA1().getId(),
+                        conflict.getA2().getId(), conflict.getA1().getCallsign(),
+                        conflict.getA2().getCallsign(), now, 1));
+                logNewAlert(conflict);
+            } else {
+                tracked.put(entry.getKey(), previous.seenAgain(conflict));
+            }
         }
 
-        List<Conflict> postCheck = trial.orElse(conflicts);
-        Set<String> remainingPairs = new HashSet<>();
-        for (Conflict conflict : postCheck) remainingPairs.add(conflictKey(conflict));
+        if (mode == CycleMode.DETECT_ONLY || conflicts.isEmpty()) {
+            List<ActiveAlert> active = new ArrayList<>();
+            for (Map.Entry<String, Conflict> entry : byKey.entrySet()) {
+                active.add(new ActiveAlert(entry.getKey(), entry.getValue(),
+                        tracked.get(entry.getKey()).firstSeenMillis(), Advice.NOT_EVALUATED, ""));
+            }
+            Counters counters = new Counters(active.size(), newAlerts, cleared.size(),
+                    0, 0, 0, 0, 0, 0);
+            return publish(new CycleReport(mode, active, cleared, counters), aircraft);
+        }
 
-        List<String[]> resolvedPairs = new ArrayList<>();
-        int unresolvedCount = 0;
-        for (Conflict conflict : conflicts) {
-            if (remainingPairs.contains(conflictKey(conflict))) {
-                unresolvedCount++;
+        // ── Resolution, one trial per group of related conflicts ──────────────
+        boolean simulate = mode == CycleMode.SIMULATE;
+        Set<String> cooling = new HashSet<>();
+        Set<String> hardPairs = new HashSet<>();
+        if (simulate) {
+            resolutionCooldown.entrySet().removeIf(e -> now - e.getValue() > COOLDOWN_MS * 2);
+            for (Map.Entry<String, Long> e : resolutionCooldown.entrySet()) {
+                if (e.getValue() + COOLDOWN_MS > now) cooling.add(e.getKey());
+            }
+            for (Map.Entry<String, TrackedAlert> e : tracked.entrySet()) {
+                if (e.getValue().cycles() > ESCALATE_CYCLES) hardPairs.add(e.getKey());
+            }
+        }
+
+        Map<String, double[]> accepted = new HashMap<>();
+        Map<String, Resolution> acceptedByAircraft = new HashMap<>();
+        Map<String, Resolution> rejectedByAircraft = new HashMap<>();
+        Map<String, String> instructionByAircraft = new HashMap<>();
+        Set<String> groupsWithoutProposal = new HashSet<>();
+        Set<String> rejectedPairs = new HashSet<>();
+        int groups = 0, proposals = 0, acceptedGroups = 0, rejectedGroups = 0;
+
+        for (List<Conflict> group : detectClusters(conflicts)) {
+            groups++;
+            Map<String, double[]> proposed = copyOf(accepted);
+            Set<String> locked = new HashSet<>(cooling);
+            List<Resolution> resolutions =
+                    resolver.resolveCluster(new ArrayList<>(group), aircraft, proposed, locked, hardPairs);
+
+            if (resolutions.isEmpty()) {
+                for (Conflict conflict : group) groupsWithoutProposal.add(conflictKey(conflict));
                 continue;
             }
-            Resolution action = appliedByAircraft.get(conflict.getA1().getId());
-            if (action == null) action = appliedByAircraft.get(conflict.getA2().getId());
-            if (action != null) resolvedPairs.add(resolvedPair(conflict, action));
+            proposals += resolutions.size();
+            for (Resolution resolution : resolutions) {
+                instructionByAircraft.put(resolution.getAircraft().getId(),
+                        Instructions.describe(resolution));
+            }
+
+            if (validateTrial(aircraft, conflicts, proposed).isPresent()) {
+                acceptedGroups++;
+                accepted = proposed;
+                for (Resolution r : resolutions) acceptedByAircraft.put(r.getAircraft().getId(), r);
+            } else {
+                rejectedGroups++;
+                for (Resolution r : resolutions) rejectedByAircraft.put(r.getAircraft().getId(), r);
+                for (Conflict conflict : group) rejectedPairs.add(conflictKey(conflict));
+            }
         }
 
-        if (unresolvedCount > 0) {
-            System.out.println("[UNRESOLVED] " + unresolvedCount
-                    + " conflict(s) still predicted after this cycle");
+        // Pairs still predicted once every accepted group is applied to trial copies.
+        Set<String> remaining = new HashSet<>();
+        for (Conflict conflict : validateTrial(aircraft, conflicts, accepted).orElse(conflicts)) {
+            remaining.add(conflictKey(conflict));
         }
-        notifyConflicts(postCheck, resolvedPairs);
-        updateMap(aircrafts);
+
+        if (simulate) {
+            for (Map.Entry<String, double[]> change : accepted.entrySet()) {
+                for (Aircraft track : aircraft) {
+                    if (track.getId().equals(change.getKey())) applyTrialState(track, change.getValue());
+                }
+                resolutionCooldown.put(change.getKey(), now);
+            }
+        }
+
+        // ── Build the report ──────────────────────────────────────────────────
+        List<ActiveAlert> active = new ArrayList<>();
+        int pairsClearedInTrial = 0;
+        int noSafeManeuver = 0;
+        for (Map.Entry<String, Conflict> entry : byKey.entrySet()) {
+            String key = entry.getKey();
+            Conflict conflict = entry.getValue();
+            String id1 = conflict.getA1().getId();
+            String id2 = conflict.getA2().getId();
+            boolean clearsInTrial = !remaining.contains(key);
+
+            if (clearsInTrial) pairsClearedInTrial++;
+
+            if (simulate && clearsInTrial) {
+                TrackedAlert alert = tracked.remove(key);
+                cleared.add(new ClearedAlert(key, id1, id2, alert.callsign1(), alert.callsign2(),
+                        instructionFor(acceptedByAircraft, instructionByAircraft, id1, id2)));
+                continue;
+            }
+
+            Advice advice;
+            String instruction;
+            if (rejectedPairs.contains(key)) {
+                advice = Advice.REJECTED_NEW_CONFLICT;
+                instruction = instructionFor(rejectedByAircraft, instructionByAircraft, id1, id2);
+            } else if (clearsInTrial) {
+                advice = Advice.CLEARS_IN_SIMULATION;
+                instruction = instructionFor(acceptedByAircraft, instructionByAircraft, id1, id2);
+            } else if (groupsWithoutProposal.contains(key)
+                    && cooling.contains(id1) && cooling.contains(id2)) {
+                advice = Advice.MANEUVER_IN_PROGRESS;
+                instruction = "";
+            } else if (groupsWithoutProposal.contains(key)) {
+                advice = Advice.NO_SAFE_MANEUVER;
+                instruction = "";
+                noSafeManeuver++;
+            } else {
+                instruction = instructionFor(acceptedByAircraft, instructionByAircraft, id1, id2);
+                advice = instruction.isEmpty() ? Advice.NO_SAFE_MANEUVER : Advice.DOES_NOT_CLEAR;
+                if (instruction.isEmpty()) noSafeManeuver++;
+            }
+            active.add(new ActiveAlert(key, conflict, tracked.get(key).firstSeenMillis(),
+                    advice, instruction));
+        }
+
+        Counters counters = new Counters(active.size(), newAlerts, cleared.size(), groups,
+                proposals, acceptedGroups, rejectedGroups, pairsClearedInTrial, noSafeManeuver);
+        logCycle(mode, counters);
+        return publish(new CycleReport(mode, active, cleared, counters), aircraft);
     }
 
+    /**
+     * Tests proposed changes on copies of the tracks. Returns the conflicts still predicted,
+     * or empty when the proposal creates a pair that was not in conflict before.
+     */
     Optional<List<Conflict>> validateTrial(List<Aircraft> aircraft, List<Conflict> originalConflicts,
                                            Map<String, double[]> proposedState) {
         if (proposedState.isEmpty()) return Optional.of(originalConflicts);
@@ -160,28 +270,46 @@ public class ATCEngine {
         return Optional.of(predicted);
     }
 
+    private CycleReport publish(CycleReport report, List<Aircraft> aircraft) {
+        listener.onCycle(report, aircraft);
+        return report;
+    }
+
+    private static String instructionFor(Map<String, Resolution> resolutions,
+                                         Map<String, String> instructions, String id1, String id2) {
+        if (resolutions.containsKey(id1)) return instructions.getOrDefault(id1, "");
+        if (resolutions.containsKey(id2)) return instructions.getOrDefault(id2, "");
+        return "";
+    }
+
+    private static Map<String, double[]> copyOf(Map<String, double[]> state) {
+        Map<String, double[]> copy = new HashMap<>();
+        for (Map.Entry<String, double[]> e : state.entrySet()) copy.put(e.getKey(), e.getValue().clone());
+        return copy;
+    }
+
     private static void applyTrialState(Aircraft aircraft, double[] state) {
         if (!Double.isNaN(state[0])) aircraft.setAltitude(state[0]);
         if (!Double.isNaN(state[1])) aircraft.setHeading(state[1]);
         if (!Double.isNaN(state[2])) aircraft.setSpeed(state[2]);
     }
 
-    private static String[] resolvedPair(Conflict conflict, Resolution action) {
-        String tag;
-        if (action.isSpeedResolution()) {
-            tag = "SPD:" + (int) action.getNewSpeed();
-        } else if (action.isHeadingResolution()) {
-            tag = "HDG:" + (int) action.getNewHeading();
-        } else {
-            tag = String.valueOf((int) action.getNewAltitude());
-        }
-        return new String[]{conflict.getA1().getCallsign(), conflict.getA2().getCallsign(),
-                action.getAircraft().getCallsign(), tag};
+    private static void logNewAlert(Conflict conflict) {
+        System.out.printf("[ALERT] %s <-> %s  %s  tCPA %.0f s  dCPA %.2f NM%n",
+                conflict.getA1().getCallsign(), conflict.getA2().getCallsign(),
+                conflict.getSeverity(), conflict.getTCPA(), conflict.getDCPA());
+    }
+
+    private static void logCycle(CycleMode mode, Counters c) {
+        System.out.printf("[CYCLE] %s alerts=%d new=%d cleared=%d groups=%d proposals=%d"
+                        + " accepted=%d rejected=%d clearInTrial=%d noSafeManeuver=%d%n",
+                mode, c.alerts(), c.newAlerts(), c.clearedAlerts(), c.groups(), c.proposals(),
+                c.acceptedGroups(), c.rejectedGroups(), c.pairsClearedInTrial(), c.noSafeManeuver());
     }
 
     // ── Conflict key ─────────────────────────────────────────────────────────
 
-    private static String conflictKey(Conflict c) {
+    static String conflictKey(Conflict c) {
         String id1 = c.getA1().getId();
         String id2 = c.getA2().getId();
         return id1.compareTo(id2) < 0 ? id1 + ":" + id2 : id2 + ":" + id1;
@@ -190,27 +318,27 @@ public class ATCEngine {
     // ── BFS cluster detection ─────────────────────────────────────────────────
 
     private List<List<Conflict>> detectClusters(List<Conflict> conflicts) {
-        // build adjacency: callsign → set of conflicts involving that aircraft
-        Map<String, Set<Conflict>> byCallsign = new HashMap<>();
+        // adjacency: aircraft ID → conflicts involving that aircraft
+        Map<String, Set<Conflict>> byAircraft = new HashMap<>();
         for (Conflict c : conflicts) {
-            byCallsign.computeIfAbsent(c.getA1().getId(), k -> new HashSet<>()).add(c);
-            byCallsign.computeIfAbsent(c.getA2().getId(), k -> new HashSet<>()).add(c);
+            byAircraft.computeIfAbsent(c.getA1().getId(), k -> new HashSet<>()).add(c);
+            byAircraft.computeIfAbsent(c.getA2().getId(), k -> new HashSet<>()).add(c);
         }
 
-        Set<Conflict>       visited  = new HashSet<>();
+        Set<Conflict> visited = new HashSet<>();
         List<List<Conflict>> clusters = new ArrayList<>();
 
         for (Conflict seed : conflicts) {
             if (visited.contains(seed)) continue;
-            List<Conflict>  cluster = new ArrayList<>();
-            Deque<Conflict> queue   = new ArrayDeque<>();
+            List<Conflict> cluster = new ArrayList<>();
+            Deque<Conflict> queue = new ArrayDeque<>();
             queue.add(seed);
             visited.add(seed);
             while (!queue.isEmpty()) {
                 Conflict curr = queue.poll();
                 cluster.add(curr);
                 for (String aircraftId : new String[]{curr.getA1().getId(), curr.getA2().getId()}) {
-                    for (Conflict neighbor : byCallsign.getOrDefault(aircraftId, Collections.emptySet())) {
+                    for (Conflict neighbor : byAircraft.getOrDefault(aircraftId, Collections.emptySet())) {
                         if (visited.add(neighbor)) queue.add(neighbor);
                     }
                 }
@@ -218,22 +346,5 @@ public class ATCEngine {
             clusters.add(cluster);
         }
         return clusters;
-    }
-
-    // ── UI bridge ─────────────────────────────────────────────────────────────
-
-    private void notifyConflicts(List<Conflict> conflicts, List<String[]> resolvedPairs) {
-        WYJAppController ctrl = WYJAppController.getInstance();
-        if (ctrl == null) return;
-        List<Conflict> ranked = conflicts.stream()
-                .sorted(Comparator.comparing(Conflict::getSeverity).thenComparingDouble(Conflict::getTCPA))
-                .toList();
-        ctrl.batchNotify(ranked, resolvedPairs);
-    }
-
-    private void updateMap(List<Aircraft> aircrafts) {
-        WYJAppController ctrl = WYJAppController.getInstance();
-        if (ctrl == null) return;
-        ctrl.updateAllAircraft(aircrafts);
     }
 }

@@ -10,9 +10,9 @@ run on the same background loop, so request latency can delay a cycle.
 `OpenSkyFetcher` reads true track and ground speed, and prefers barometric
 altitude over geometric altitude when both are available. `AircraftManager`
 keys live aircraft by their ICAO24 addresses. Every successful snapshot
-replaces the tracked set and restores reported coordinates, altitude, track,
-and speed. This keeps a simulated maneuver from persisting into the next
-observation. [OpenSky state-vector reference](https://openskynetwork.github.io/opensky-api/rest.html)
+replaces the tracked set and updates reported coordinates, altitude, track,
+and speed. In live mode the engine never edits these tracks, so every alert
+reflects where OpenSky reports the aircraft. [OpenSky state-vector reference](https://openskynetwork.github.io/opensky-api/rest.html)
 
 If a poll fails, the app temporarily uses its latest successful snapshot and
 labels the source stale. If no usable snapshot is available or the snapshot is
@@ -31,15 +31,28 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
    are checked at their current distance. Within the ten-minute lookahead,
    distances below 5 NM and altitude differences below 1,000 ft trigger an
    alert. Prediction assumes constant altitude.
-3. `ATCEngine` groups conflicts that share aircraft. `ResolutionEngine`
-   searches for altitude changes, then track changes, then speed reductions.
-   Candidate checks use simplified aircraft performance, separation buffers,
-   and other changes already selected in the cycle.
-4. The engine reruns detection on trial tracks before applying changes. If
-   the trial introduces a new predicted conflict, the whole batch is
-   discarded for that cycle. For an accepted batch, the engine reports each
-   original pair as cleared only if the pair drops out of the detector's
-   results. Remaining conflicts stay active.
+3. `ATCEngine` tracks each alert by its aircraft pair, so an encounter keeps
+   its first-seen time across refreshes. It groups conflicts that share
+   aircraft. `ResolutionEngine` searches for altitude changes, then track
+   changes, then speed reductions. Candidate checks use simplified aircraft
+   performance, separation buffers, and changes already accepted in the cycle.
+4. Each group is tested on its own trial copy of the tracks. A group is
+   rejected if its maneuvers create a new predicted conflict. Rejecting one
+   group does not affect the others.
+5. The cycle mode decides what happens next:
+   - `ADVISE` (live OpenSky traffic): nothing is applied. Each alert carries
+     its proposed instruction and whether it clears in simulation. An alert
+     is reported cleared only when the observed tracks stop triggering it.
+   - `SIMULATE` (scripted demo): accepted maneuvers are applied to the demo
+     tracks, and pairs they separate are reported cleared with the
+     instruction that cleared them.
+   - `DETECT_ONLY` (first eight seconds of the demo): alerts are shown and
+     no maneuvers are evaluated.
+6. Every cycle produces a `CycleReport` with active alerts, cleared alerts,
+   and counters (alerts, new alerts, groups, proposals, accepted and rejected
+   groups, pairs cleared in trial, pairs without a safe maneuver). The
+   counters are logged and shown above the conflict list. The engine hands
+   the report to a `CycleListener`, so it has no dependency on the display.
 
 ## Desktop display
 

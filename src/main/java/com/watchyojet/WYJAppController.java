@@ -15,16 +15,19 @@ import javafx.application.Platform;
 import javafx.stage.Stage;
 
 import java.net.URL;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.watchyojet.engine.CycleListener;
+import com.watchyojet.engine.CycleReport;
 import com.watchyojet.model.Aircraft;
 import com.watchyojet.model.Conflict;
 
-public class WYJAppController {
+public class WYJAppController implements CycleListener {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static WYJAppController instance;
     public static WYJAppController getInstance() {
@@ -190,54 +193,66 @@ public class WYJAppController {
         });
     }
 
-    public void batchNotify(List<Conflict> conflicts, List<String[]> resolvedPairs) {
-        final String activeJson;
+    @Override
+    public void onCycle(CycleReport report, List<Aircraft> aircraft) {
+        updateAllAircraft(aircraft);
+        publishConflicts(report);
+    }
+
+    private void publishConflicts(CycleReport report) {
+        final String reportJson;
         try {
-            activeJson = JSON.writeValueAsString(conflicts.stream().map(conflict -> Map.of(
-                    "id1", conflict.getA1().getId(), "id2", conflict.getA2().getId(),
-                    "callsign1", conflict.getA1().getCallsign(), "callsign2", conflict.getA2().getCallsign(),
-                    "severity", conflict.getSeverity().name(), "seconds", Math.round(conflict.getTCPA()),
-                    "distance", conflict.getDCPA()
-            )).toList());
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("mode", report.mode().name());
+            payload.put("active", report.active().stream().map(alert -> {
+                Conflict conflict = alert.conflict();
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("key", alert.pairKey());
+                item.put("id1", conflict.getA1().getId());
+                item.put("id2", conflict.getA2().getId());
+                item.put("callsign1", conflict.getA1().getCallsign());
+                item.put("callsign2", conflict.getA2().getCallsign());
+                item.put("severity", conflict.getSeverity().name());
+                item.put("seconds", Math.round(conflict.getTCPA()));
+                item.put("distance", conflict.getDCPA());
+                item.put("firstSeen", alert.firstSeenMillis());
+                item.put("advice", alert.advice().name());
+                item.put("instruction", alert.instruction());
+                return item;
+            }).toList());
+            payload.put("cleared", report.cleared().stream().map(alert -> {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("key", alert.pairKey());
+                item.put("id1", alert.id1());
+                item.put("id2", alert.id2());
+                item.put("callsign1", alert.callsign1());
+                item.put("callsign2", alert.callsign2());
+                item.put("instruction", alert.instruction());
+                return item;
+            }).toList());
+            CycleReport.Counters c = report.counters();
+            Map<String, Object> counters = new LinkedHashMap<>();
+            counters.put("alerts", c.alerts());
+            counters.put("newAlerts", c.newAlerts());
+            counters.put("clearedAlerts", c.clearedAlerts());
+            counters.put("groups", c.groups());
+            counters.put("proposals", c.proposals());
+            counters.put("acceptedGroups", c.acceptedGroups());
+            counters.put("rejectedGroups", c.rejectedGroups());
+            counters.put("pairsClearedInTrial", c.pairsClearedInTrial());
+            counters.put("noSafeManeuver", c.noSafeManeuver());
+            payload.put("counters", counters);
+            reportJson = JSON.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
             log("Unable to encode conflict update: " + e.getMessage());
             return;
         }
         Platform.runLater(() -> {
             try {
-                webEngine.executeScript("setActiveConflicts(" + activeJson + ")");
-
-                if (!resolvedPairs.isEmpty()) {
-                    for (String[] pair : resolvedPairs) {
-                        String s1      = pair[0];
-                        String s2      = pair[1];
-                        String movedCs = pair.length > 2 ? pair[2] : "";
-                        String val     = pair.length > 3 ? pair[3] : "0";
-                        try {
-                            if (val.startsWith("HDG:") || val.startsWith("SPD:")) {
-                                String action = val.startsWith("HDG:")
-                                        ? "heading → " + val.substring(4) + "°"
-                                        : "speed → " + val.substring(4) + " kt";
-                                webEngine.executeScript("typeof markResolved !== 'undefined' && markResolved("
-                                        + json(s1) + "," + json(s2) + "," + json(movedCs) + ",0,"
-                                        + json(action) + ")");
-                                webEngine.executeScript("typeof logATCEvent !== 'undefined' && logATCEvent("
-                                        + json(movedCs + " " + action) + ")");
-                            } else {
-                                webEngine.executeScript("typeof markResolved !== 'undefined' && markResolved("
-                                        + json(s1) + "," + json(s2) + "," + json(movedCs) + "," + val
-                                        + ",\"\")");
-                            }
-                        } catch (RuntimeException e) {
-                            reportWebError("resolution notification", e);
-                        }
-                    }
-                    String msg = "✓ " + resolvedPairs.size() + " conflict(s) resolved";
-                    webEngine.executeScript("typeof logATCEvent !== 'undefined' && logATCEvent("
-                            + json(msg) + ")");
-                }
+                Object check = webEngine.executeScript("typeof applyCycleReport !== 'undefined'");
+                if (check.equals(true)) webEngine.executeScript("applyCycleReport(" + reportJson + ")");
             } catch (RuntimeException e) {
-                reportWebError("resolution notification", e);
+                reportWebError("conflict update", e);
             }
         });
     }

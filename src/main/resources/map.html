@@ -475,6 +475,8 @@
   .conflict-item .conflict-row {
     display: flex; align-items: center; gap: 8px;
   }
+  .cycle-stats { margin: -4px 0 8px; color: var(--ink-soft); }
+  .advice-ok { color: var(--ok); }
   .resolution-detail {
     font-size: 10px;
     font-weight: 500;
@@ -618,6 +620,7 @@
 <aside class="right-panel">
   <div class="panel-section" id="conflictPanelSection" style="display:none">
     <div class="panel-title" style="color:var(--danger)">CONFLICT STATUS <span class="count" id="conflictCount">0</span></div>
+    <div class="resolution-detail cycle-stats" id="cycleStats"></div>
     <div id="conflictList"></div>
   </div>
   <div class="panel-section" id="resLogSection" style="display:none">
@@ -2244,7 +2247,9 @@ function init() {
 const feedAircraft = new Map();
 let feedSource = null;
 let activeConflicts = [];
-const resolvedSet = new Map();   // recently resolved: "CS1|CS2" → timestamp
+const resolvedSet = new Map();   // recently cleared, keyed by aircraft pair
+let trafficMode = null;          // ADVISE (observed traffic), SIMULATE or DETECT_ONLY (scripted)
+let cycleCounters = null;
 
 // Resolution history — rolling last 10, each shown for 30 s
 const resolutionHistory = [];
@@ -2278,11 +2283,9 @@ function renderResolutionHistory() {
   countEl.textContent = resolutionHistory.length;
 
   list.innerHTML = [...resolutionHistory].reverse().map(e => {
-    const flStr = e.actionText
-      ? `<span class="res-action">${escapeHtml(e.movedCs)} → ${escapeHtml(e.actionText)}</span>`
-      : e.movedCs && e.newAlt
-        ? `<span class="res-action">${escapeHtml(e.movedCs)} → ${formatAltitude(e.newAlt)}</span>`
-        : '<span class="res-action">separation applied</span>';
+    const flStr = e.instruction
+      ? `<span class="res-action">${escapeHtml(e.instruction)}</span>`
+      : '<span class="res-action">observed tracks separated</span>';
     const d = new Date(e.ts);
     const hh = String(d.getHours()).padStart(2,'0');
     const mm = String(d.getMinutes()).padStart(2,'0');
@@ -2356,42 +2359,82 @@ function renderConflictPanel() {
 
   const activeHtml = activeConflicts.map(conflict => {
     const timing = conflict.seconds === 0 ? 'Current proximity' : `CPA in ${conflict.seconds} s`;
-    return `<div class="conflict-item"><div class="conflict-row"><span class="alert-tag">${escapeHtml(conflict.severity)}</span>${escapeHtml(conflict.callsign1)} ↔ ${escapeHtml(conflict.callsign2)}</div><div class="resolution-detail">${timing} · ${conflict.distance.toFixed(1)} NM</div></div>`;
+    const age = _fmtDuration(now - conflict.firstSeen);
+    return `<div class="conflict-item"><div class="conflict-row"><span class="alert-tag">${escapeHtml(conflict.severity)}</span>${escapeHtml(conflict.callsign1)} ↔ ${escapeHtml(conflict.callsign2)}</div>` +
+      `<div class="resolution-detail">${timing} · ${conflict.distance.toFixed(1)} NM · active ${age}</div>` +
+      _adviceLine(conflict) + `</div>`;
   }).join('');
 
-  const resolvedHtml = Array.from(resolvedSet.entries()).map(([key, v]) => {
-    const [cs1, cs2] = JSON.parse(key);
-    const resLine = v.actionText
-      ? `<div class="resolution-detail">↳ ${escapeHtml(v.movedCs)} → ${escapeHtml(v.actionText)}</div>`
-      : v.movedCs && v.newAlt
-        ? `<div class="resolution-detail">↳ ${escapeHtml(v.movedCs)} → ${formatAltitude(v.newAlt)}</div>`
-        : '';
-    return `<div class="conflict-item resolved-item"><div class="conflict-row"><span class="alert-tag resolved-tag">CLEARED</span>${escapeHtml(cs1)} ↔ ${escapeHtml(cs2)}</div>${resLine}</div>`;
+  const resolvedHtml = Array.from(resolvedSet.values()).map(v => {
+    const resLine = v.instruction
+      ? `<div class="resolution-detail">↳ ${escapeHtml(v.instruction)}</div>`
+      : `<div class="resolution-detail">↳ Observed tracks no longer conflict</div>`;
+    return `<div class="conflict-item resolved-item"><div class="conflict-row"><span class="alert-tag resolved-tag">CLEARED</span>${escapeHtml(v.callsign1)} ↔ ${escapeHtml(v.callsign2)}</div>${resLine}</div>`;
   }).join('');
 
+  renderCycleStats();
   list.innerHTML = activeHtml + resolvedHtml;
 }
 
-function setActiveConflicts(conflicts) {
-  activeConflicts = conflicts;
-  for (const conflict of conflicts) {
-    resolvedSet.delete(JSON.stringify([conflict.callsign1, conflict.callsign2].sort()));
-  }
-  renderConflictPanel();
-  _needsRedraw = true;
+function _fmtDuration(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's';
 }
 
-function markResolved(cs1, cs2, movedCs, newAlt, actionText = '') {
-  const key = JSON.stringify([cs1, cs2].sort());
+function _adviceLine(conflict) {
+  const instruction = escapeHtml(conflict.instruction || '');
+  switch (conflict.advice) {
+    case 'CLEARS_IN_SIMULATION':
+      return `<div class="resolution-detail advice-ok">Proposed: ${instruction} · clears in simulation</div>`;
+    case 'REJECTED_NEW_CONFLICT':
+      return `<div class="resolution-detail">Proposal rejected (${instruction}): creates a new conflict</div>`;
+    case 'DOES_NOT_CLEAR':
+      return `<div class="resolution-detail">Proposed: ${instruction} · does not clear this pair</div>`;
+    case 'NO_SAFE_MANEUVER':
+      return `<div class="resolution-detail">No safe maneuver found</div>`;
+    case 'MANEUVER_IN_PROGRESS':
+      return `<div class="resolution-detail">Maneuver in progress</div>`;
+    default:
+      return trafficMode === 'DETECT_ONLY'
+        ? `<div class="resolution-detail">Watching · maneuvers start after the preview</div>`
+        : '';
+  }
+}
+
+function renderCycleStats() {
+  const el = document.getElementById('cycleStats');
+  if (!el) return;
+  if (!cycleCounters || trafficMode === null) { el.textContent = ''; return; }
+  const c = cycleCounters;
+  if (trafficMode === 'ADVISE') {
+    el.textContent = `Advisory only · ${c.alerts} alerts · ${c.pairsClearedInTrial} clear in simulation · ` +
+      `${c.rejectedGroups} rejected · ${c.noSafeManeuver} without a safe maneuver`;
+  } else if (trafficMode === 'SIMULATE') {
+    el.textContent = `Simulation · maneuvers applied to scripted tracks · ${c.alerts} alerts`;
+  } else {
+    el.textContent = `Preview · ${c.alerts} alerts`;
+  }
+}
+
+// Java pushes one report per engine cycle.
+function applyCycleReport(report) {
   const ts = Date.now();
-  resolvedSet.set(key, { ts, movedCs: movedCs || '', newAlt: newAlt || 0, actionText });
+  trafficMode = report.mode;
+  cycleCounters = report.counters;
+  activeConflicts = report.active;
 
-  // Add to resolution history (cap at 10)
-  resolutionHistory.push({ ts, cs1, cs2, movedCs: movedCs || '', newAlt: +newAlt || 0, actionText });
-  if (resolutionHistory.length > RES_HISTORY_MAX) resolutionHistory.shift();
-  renderResolutionHistory();
+  for (const conflict of report.active) resolvedSet.delete(conflict.key);
+  for (const done of report.cleared) {
+    resolvedSet.set(done.key, { ts, callsign1: done.callsign1, callsign2: done.callsign2,
+                                instruction: done.instruction || '' });
+    resolutionHistory.push({ ts, cs1: done.callsign1, cs2: done.callsign2,
+                             instruction: done.instruction || '' });
+    if (resolutionHistory.length > RES_HISTORY_MAX) resolutionHistory.shift();
+  }
 
+  if (report.cleared.length > 0) renderResolutionHistory();
   renderConflictPanel();
+  _needsRedraw = true;
 }
 
 function logATCEvent(message) {
@@ -2407,6 +2450,7 @@ function resetTrafficDisplay() {
   pendingAircraft = null;
   activeConflicts = [];
   resolvedSet.clear();
+  cycleCounters = null;
   resolutionHistory.length = 0;
   state.selectedAircraftId = null;
   state.hoverAircraftId = null;

@@ -47,13 +47,20 @@ JavaFX controller → WebView traffic display
 ```
 
 The simulator uses a 5 NM horizontal and 1,000 ft vertical alert threshold,
-with a lookahead of up to ten minutes. It tests proposed maneuvers on trial
-tracks before applying them and rejects a batch that introduces a new
-predicted conflict.
-Fresh OpenSky data restores the observed aircraft state.
+with a lookahead of up to ten minutes. Each group of related conflicts gets
+its own trial: proposed maneuvers are tested on copies of the tracks, and a
+group is rejected only if its maneuvers create a new predicted conflict.
 
-WatchyoJet ATC is an educational simulation. Maneuvers apply instantly to the
-simulated tracks. It models airborne conflicts and does not issue real
+Live traffic is advisory only. The engine never changes an OpenSky track. Each
+alert keeps its identity across refreshes and shows the proposed instruction,
+for example "DAL123 climb and maintain 12,000 ft · clears in simulation". An
+alert is marked cleared only when the observed tracks stop triggering the
+detector. The offline demo applies accepted maneuvers to its scripted tracks.
+Every cycle logs how many alerts were detected, how many groups were accepted
+or rejected, and how many pairs clear in simulation.
+
+WatchyoJet ATC is an educational simulation. In the demo, maneuvers apply
+instantly to the scripted tracks. It models airborne conflicts and does not issue real
 clearances or transmit instructions to aircraft. See the
 [system documentation](Documentation/WATCHYOJET_DOCS.md) for the data flow,
 limitations, and comparison with FAA procedures.
