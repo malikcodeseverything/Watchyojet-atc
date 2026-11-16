@@ -1,5 +1,6 @@
 package com.watchyojet.manager;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -7,6 +8,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,7 +42,6 @@ public class OpenSkyFetcher {
     }
 
     public FetchResult fetchLiveTrafficResult() {
-        List<Aircraft> liveAircraft = new ArrayList<>();
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(OPENSKY_URL))
@@ -55,76 +56,66 @@ public class OpenSkyFetcher {
             if (response.statusCode() != 200) {
                 String message = "OpenSky returned HTTP " + response.statusCode();
                 System.out.println("[FETCHER] " + message);
-                return new FetchResult(false, liveAircraft, message);
+                return new FetchResult(false, List.of(), message);
             }
 
-            JsonNode rootNode  = mapper.readTree(response.body());
-            JsonNode statesNode = rootNode.get("states");
-
-            if (statesNode == null || !statesNode.isArray()) {
-                return new FetchResult(false, liveAircraft, "OpenSky response had no states array");
-            }
-
-            for (JsonNode state : statesNode) {
-
-                if (state.size() < 11) continue;
-
-                // skip if essential fields are null
-                if (state.get(1).isNull()  ||   // callsign
-                    state.get(5).isNull()  ||   // longitude
-                    state.get(6).isNull()  ||   // latitude
-                    state.get(9).isNull()  ||   // velocity (m/s)
-                    state.get(10).isNull())      // heading
-                    continue;
-
-                // OpenSky fields: barometric altitude is index 7, geometric is 13.
-                double altMeters;
-                if (!state.get(7).isNull()) {
-                    altMeters = state.get(7).asDouble();
-                } else if (state.size() > 13 && !state.get(13).isNull()) {
-                    altMeters = state.get(13).asDouble();
-                } else {
-                    continue; // no usable altitude
-                }
-
-                if (state.size() > 8 && state.get(8).asBoolean(false)) continue;
-
-                String callsign = state.get(1).asText().trim();
-                String icao24 = state.get(0).asText().trim();
-                if (!icao24.matches("(?i)[0-9a-f]{6}")) continue;
-                if (callsign.isEmpty()) callsign = icao24;
-
-                double lon          = state.get(5).asDouble();
-                double lat          = state.get(6).asDouble();
-                double altitudeFeet = altMeters * 3.28084;
-                double speedKnots   = state.get(9).asDouble() * 1.94384;
-                double heading      = state.get(10).asDouble();
-
-                if (!Double.isFinite(lat) || !Double.isFinite(lon)
-                        || !Double.isFinite(altitudeFeet) || !Double.isFinite(speedKnots)
-                        || !Double.isFinite(heading)
-                        || lat < -90 || lat > 90 || lon < -180 || lon > 180
-                        || altitudeFeet < -2_000 || altitudeFeet > 100_000
-                        || speedKnots < 0 || speedKnots > 2_000) {
-                    continue;
-                }
-
-                AircraftType type = inferType(speedKnots, altitudeFeet);
-
-                liveAircraft.add(new Aircraft(icao24, callsign, lat, lon,
-                        altitudeFeet, speedKnots, heading, type));
-            }
-
-            return new FetchResult(true, liveAircraft,
-                    "Fetched " + liveAircraft.size() + " aircraft");
+            return parseSnapshot(response.body());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new FetchResult(false, liveAircraft, "OpenSky request interrupted");
-        } catch (Exception e) {
+            return new FetchResult(false, List.of(), "OpenSky request interrupted");
+        } catch (IOException e) {
             String message = "Failed to fetch OpenSky data: " + e.getMessage();
             System.out.println("[FETCHER] " + message);
-            return new FetchResult(false, liveAircraft, message);
+            return new FetchResult(false, List.of(), message);
         }
+    }
+
+    FetchResult parseSnapshot(String body) throws IOException {
+        JsonNode root = mapper.readTree(body);
+        JsonNode states = root == null ? null : root.get("states");
+        if (states == null || !states.isArray()) {
+            return new FetchResult(false, List.of(), "OpenSky response had no states array");
+        }
+
+        List<Aircraft> aircraft = new ArrayList<>();
+        for (JsonNode state : states) {
+            if (!state.isArray() || state.size() < 11
+                    || !state.get(0).isTextual() || !state.get(8).isBoolean()
+                    || state.get(8).booleanValue()) {
+                continue;
+            }
+
+            String icao24 = state.get(0).textValue().trim().toLowerCase(Locale.ROOT);
+            if (!icao24.matches("[0-9a-f]{6}")) continue;
+
+            String callsign = state.get(1).isTextual() ? state.get(1).textValue().trim() : "";
+            if (callsign.isEmpty()) callsign = icao24;
+
+            JsonNode altitude = state.get(7).isNull() ? state.path(13) : state.get(7);
+            double lon = numericValue(state.get(5));
+            double lat = numericValue(state.get(6));
+            double altitudeFeet = numericValue(altitude) * 3.28084;
+            double speedKnots = numericValue(state.get(9)) * 1.94384;
+            double track = numericValue(state.get(10));
+
+            if (!Double.isFinite(lat) || !Double.isFinite(lon)
+                    || !Double.isFinite(altitudeFeet) || !Double.isFinite(speedKnots)
+                    || !Double.isFinite(track)
+                    || lat < -90 || lat > 90 || lon < -180 || lon > 180
+                    || altitudeFeet < -2_000 || altitudeFeet > 100_000
+                    || speedKnots < 0 || speedKnots > 2_000 || track < 0 || track >= 360) {
+                continue;
+            }
+
+            aircraft.add(new Aircraft(icao24, callsign, lat, lon, altitudeFeet, speedKnots,
+                    track, inferType(speedKnots, altitudeFeet)));
+        }
+
+        return new FetchResult(true, aircraft, "Fetched " + aircraft.size() + " aircraft");
+    }
+
+    private static double numericValue(JsonNode value) {
+        return value.isNumber() ? value.doubleValue() : Double.NaN;
     }
 
     private AircraftType inferType(double speedKnots, double altFeet) {
