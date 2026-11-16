@@ -1,7 +1,10 @@
 package com.watchyojet;
 
 
+import netscape.javascript.JSObject;
+
 import javafx.concurrent.Task;
+import javafx.css.PseudoClass;
 import javafx.concurrent.Worker;
 import javafx.fxml.FXML;
 import javafx.scene.control.CheckMenuItem;
@@ -59,6 +62,24 @@ public class WYJAppController implements CycleListener {
     @FXML
     private RadioMenuItem offlineDemo;
 
+    private static final PseudoClass DARK = PseudoClass.getPseudoClass("dark");
+    private final Appearance appearance = new Appearance();
+    private boolean darkMode = Boolean.getBoolean("watchyojet.dark");
+
+    public final class Appearance {
+        public void toggle() {
+            darkMode = !darkMode;
+            applyAppearance();
+        }
+    }
+
+    private void applyAppearance() {
+        topContainer.pseudoClassStateChanged(DARK, darkMode);
+        if (webEngine.getLoadWorker().getState() == Worker.State.SUCCEEDED) {
+            webEngine.executeScript("setAppearance(" + darkMode + ")");
+        }
+    }
+
     private WebEngine webEngine;
 
     @FXML
@@ -68,6 +89,7 @@ public class WYJAppController implements CycleListener {
         liveTraffic.setSelected(!Main.START_IN_DEMO);
         replayDemo.setDisable(!Main.START_IN_DEMO);
         webEngine = webView.getEngine();
+        applyAppearance();
 
         spawnMainThread.setOnFailed(event -> {
             Throwable error = spawnMainThread.getException();
@@ -78,6 +100,13 @@ public class WYJAppController implements CycleListener {
 
         webEngine.getLoadWorker().stateProperty().addListener((observable, previous, state) -> {
             if (state == Worker.State.SUCCEEDED) {
+                try {
+                    JSObject window = (JSObject) webEngine.executeScript("window");
+                    window.setMember("watchYoJetAppearance", appearance);
+                    applyAppearance();
+                } catch (RuntimeException error) {
+                    reportWebError("appearance", error);
+                }
                 refreshDataStatus();
                 startEngine();
             } else if (state == Worker.State.FAILED) {

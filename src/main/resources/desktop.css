@@ -1,0 +1,51 @@
+.desktop {
+    -fx-face: #ffffff;
+    -fx-panel: #f7f9fc;
+    -fx-ink: #142338;
+    -fx-edge: #dbe4ee;
+    -fx-picked: #edf4ff;
+    -fx-accent-blue: #2459bf;
+    -fx-background-color: -fx-face;
+    -fx-font-family: "System";
+}
+.desktop:dark {
+    -fx-face: #0b0c0e;
+    -fx-panel: #121316;
+    -fx-ink: #f0f2f6;
+    -fx-edge: #292d35;
+    -fx-picked: #18243a;
+    -fx-accent-blue: #93b7ff;
+}
+.desktop .desktop-menu {
+    -fx-background-color: -fx-face;
+    -fx-padding: 3 11;
+    -fx-border-color: transparent transparent -fx-edge transparent;
+}
+.desktop .desktop-menu > .container > .menu-button {
+    -fx-background-radius: 999;
+    -fx-padding: 5 13;
+}
+.desktop .desktop-menu .label {
+    -fx-text-fill: -fx-ink;
+    -fx-font-size: 13px;
+}
+.desktop .desktop-menu .menu-button:hover,
+.desktop .desktop-menu .menu-button:showing,
+.desktop .desktop-menu .menu-item:focused {
+    -fx-background-color: -fx-picked;
+}
+.desktop .desktop-menu .context-menu {
+    -fx-background-color: -fx-face;
+    -fx-background-radius: 8;
+    -fx-border-color: -fx-edge;
+    -fx-border-radius: 8;
+    -fx-padding: 5;
+}
+.desktop .list-view, .desktop .list-cell {
+    -fx-background-color: -fx-panel;
+    -fx-text-fill: -fx-ink;
+}
+.desktop .list-cell:filled:selected {
+    -fx-background-color: -fx-picked;
+    -fx-text-fill: -fx-ink;
+}

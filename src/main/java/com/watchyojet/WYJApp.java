@@ -21,7 +21,7 @@ public class WYJApp extends Application {
     public void start(Stage stage) throws IOException {
         FXMLLoader fxmlLoader = new FXMLLoader(WYJApp.class.getResource("/main-view.fxml"));
         Scene scene = new Scene(fxmlLoader.load(), 1180, 740);
-        stage.setTitle("WatchyoJet ATC");
+        stage.setTitle("WatchYoJet");
         stage.setScene(scene);
         stage.setMinWidth(820);
         stage.setMinHeight(540);

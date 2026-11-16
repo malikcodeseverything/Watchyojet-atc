@@ -1,0 +1,126 @@
+:root {
+  --workspace: #edf2f8;
+  --group: #ffffff;
+  --tile: #f2f6fb;
+  --menu-selected: #e1ebfb;
+}
+
+:root[data-theme="dark"] {
+  --workspace: #0b0c0e;
+  --group: #141920;
+  --tile: #1b222c;
+  --menu-selected: #243245;
+  --line: #2a3340;
+}
+
+body {
+  background: var(--workspace);
+  grid-template-rows: 50px 44px minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(155px, 19%) minmax(0, 1fr) minmax(235px, 27%);
+  grid-template-areas:
+    "header header header"
+    "navigation navigation navigation"
+    "sidebar main rightpanel"
+    "footer footer footer";
+  column-gap: 12px;
+}
+
+header { padding: 0 17px; gap: 12px; }
+.logo { gap: 8px; font-size: 20px; }
+.logo-mark { width: 29px; height: 29px; }
+.logo-mark img { width: 19px; height: 19px; }
+.header-right { gap: 12px; }
+#dataStatusBadge, #appearanceToggle { border-radius: 999px; }
+#dataStatusBadge { padding: 5px 10px; background: var(--tile); }
+#dataStatusBadge::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+#dataStatusBadge:not([data-mode="live"])::before { background: var(--ink-faint); }
+
+.workspace-nav {
+  grid-area: navigation;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 15px;
+  min-width: 0;
+}
+.workspace-nav .breadcrumb { overflow: hidden; text-transform: none; letter-spacing: 0; }
+.workspace-nav .crumb { border-radius: 999px; white-space: nowrap; padding: 5px 11px; }
+.workspace-nav .crumb.active { background: var(--menu-selected); color: var(--ink); font-weight: 650; }
+.back-btn { padding: 4px 8px; background: transparent; border-color: transparent; text-transform: none; }
+
+.sidebar, .right-panel { min-height: 0; background: transparent; border: 0; padding: 0; }
+.sidebar { padding-left: 12px; }
+.right-panel { padding-right: 12px; }
+.sidebar .panel-section, .right-panel .panel-section {
+  padding: 11px;
+  margin: 0 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--group);
+}
+.panel-title {
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 650;
+  border: 0;
+  padding: 0;
+  margin: 0 0 8px;
+}
+.panel-title .count { padding: 2px 7px; background: var(--tile); color: var(--ink-soft); border-radius: 10px; }
+.search-input { background: var(--tile); border-radius: 8px; padding: 7px 8px; margin-bottom: 7px; }
+.item { padding: 6px 7px; gap: 7px; }
+.item .name { font-size: 12px; }
+.stat-grid { gap: 6px; }
+.stat-card { background: var(--tile); border: 1px solid var(--line); padding: 8px; border-radius: 9px; }
+.stat-card .label { text-transform: none; letter-spacing: 0; font-size: 11px; }
+.stat-card .value { font-size: 21px; font-weight: 650; }
+.stat-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.hint { margin-top: 7px; padding: 6px 8px; font-size: 11px; border-left: 0; }
+
+.main {
+  min-width: 0;
+  min-height: 0;
+  margin-bottom: 9px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.legend-pill, .map-overlay-bottom { border-radius: 999px; }
+.map-overlay-top { gap: 5px; }
+.legend-pill { padding: 4px 7px; }
+.map-zoom-controls { border-radius: 10px; }
+.map-zoom-controls #focusPHL { font-size: 12px; font-weight: 650; }
+
+.report-summary { margin-bottom: 8px; font-size: 11px; color: var(--ink-soft); }
+.report-summary summary { cursor: pointer; }
+.report-summary .cycle-stats { margin: 5px 0 0; padding: 0; color: var(--ink-soft); }
+#conflictList { max-height: clamp(112px, 30vh, 245px); }
+.conflict-item { background: var(--tile); border-color: var(--line); border-radius: 8px; }
+.conflict-button .conflict-row { color: var(--ink); }
+.conflict-button:hover { border-color: var(--accent); }
+.conflict-button .alert-tag { border-radius: 999px; }
+.resolved-item { color: var(--ink); }
+.res-log-entry { border-radius: 6px; }
+.empty-state { padding: 10px 6px; }
+.empty-state::before { content: none; }
+
+footer { gap: 14px; padding: 0 15px; letter-spacing: 0; }
+footer .ticker + .ticker { padding-left: 12px; border-left: 1px solid var(--line); }
+footer .ticker .label { text-transform: none; }
+
+@media (max-width: 920px) {
+  body { column-gap: 8px; }
+  .sidebar { padding-left: 8px; }
+  .right-panel { padding-right: 8px; }
+  .sidebar .panel-section, .right-panel .panel-section { padding: 8px; }
+}

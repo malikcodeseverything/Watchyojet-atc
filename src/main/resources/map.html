@@ -4,29 +4,77 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>WatchyoJet ATC</title>
+<title>WatchYoJet</title>
 <style>
+  @font-face {
+    font-family: Geist;
+    src: url("fonts/Geist.ttf") format("truetype");
+    font-weight: 100 900;
+    font-display: swap;
+  }
   :root {
-    --bg: #f4f1ec;
+    --bg: #f7f9fc;
     --bg-panel: #ffffff;
-    --bg-soft: #ebe6de;
-    --ink: #1a1d24;
-    --ink-soft: #5a6370;
-    --ink-faint: #99a0ab;
-    --line: #d9d3c8;
-    --line-soft: #e8e3d9;
-    --accent: #ff5a1f;         /* signal orange */
-    --accent-deep: #d94412;
-    --ok: #2e8b57;
-    --warn: #e0a800;
-    --danger: #c8302c;
-    --sky: #c9d8e6;
-    --land: #e8e0cf;
-    --land-hi: #d9cdb3;
-    --water: #b8c9db;
-    --runway: #2a2d34;
+    --bg-soft: #edf4ff;
+    --ink: #142338;
+    --ink-soft: #50647a;
+    --ink-faint: #586c82;
+    --line: #dbe4ee;
+    --line-soft: #e8eef5;
+    --accent: #2459bf;
+    --accent-deep: #234a92;
+    --ok: #13785f;
+    --warn: #7753a2;
+    --climb: #266bc8;
+    --descent: #7753a2;
+    --danger: #b52349;
+    --danger-rgb: 181, 35, 73;
+    --badge-ink: #ffffff;
+    --sky: #d6e7f5;
+    --land: #ecf2f5;
+    --land-hi: #dce8f3;
+    --globe-water-center: #e2eff7;
+    --globe-water-edge: #b9cfe0;
+    --globe-land: #e4e8ed;
+    --globe-grid: rgba(61, 87, 111, 0.17);
+    --globe-rim: #8fa8bd;
+    --boundary: #839db5;
+    --airfield: #d9e3e9;
+    --runway: #253447;
     --shadow-lg: 0 20px 50px -20px rgba(20, 25, 35, 0.25);
     --shadow-sm: 0 2px 10px -2px rgba(20, 25, 35, 0.12);
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121316;
+    --bg-panel: #0b0c0e;
+    --bg-soft: #18243a;
+    --ink: #f0f2f6;
+    --ink-soft: #a4aab4;
+    --ink-faint: #969eab;
+    --line: #292d35;
+    --line-soft: #232831;
+    --accent: #93b7ff;
+    --accent-deep: #93b7ff;
+    --ok: #6fd3b1;
+    --warn: #c3a4ff;
+    --climb: #83b9ff;
+    --descent: #c3a4ff;
+    --danger: #ff84a2;
+    --danger-rgb: 255, 132, 162;
+    --badge-ink: #0b0c0e;
+    --sky: #0c1016;
+    --land: #191d24;
+    --land-hi: #202a38;
+    --globe-water-center: #171d25;
+    --globe-water-edge: #090c10;
+    --globe-land: #2a3039;
+    --globe-grid: rgba(154, 173, 192, 0.19);
+    --globe-rim: #495361;
+    --boundary: #545f70;
+    --airfield: #212936;
+    --runway: #495363;
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -36,7 +84,7 @@
     overflow: hidden;
     background: var(--bg);
     color: var(--ink);
-    font-family: 'Outfit', sans-serif;
+    font-family: Geist, system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
     font-feature-settings: "ss01", "cv11";
   }
@@ -44,7 +92,7 @@
   body {
     display: grid;
     grid-template-rows: 60px 1fr 42px;
-    grid-template-columns: minmax(190px, 23%) minmax(0, 1fr) minmax(235px, 27%);
+    grid-template-columns: minmax(154px, 17%) minmax(0, 1fr) minmax(235px, 27%);
     grid-template-areas:
       "header header header"
       "sidebar main rightpanel"
@@ -66,7 +114,7 @@
   }
 
   .logo {
-    font-family: 'Fraunces', serif;
+    font-family: Geist, system-ui, sans-serif;
     font-weight: 700;
     font-size: 22px;
     letter-spacing: -0.02em;
@@ -74,21 +122,34 @@
     align-items: center;
     gap: 10px;
   }
-  .logo::before {
-    content: "";
-    width: 10px; height: 10px;
-    background: var(--accent);
-    border-radius: 2px;
-    transform: rotate(45deg);
-    display: inline-block;
+  .logo { white-space: nowrap; letter-spacing: -0.045em; }
+  .logo-mark {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--accent-deep);
   }
-  .logo span { color: var(--accent); font-style: italic; }
+  .logo-mark img { width: 21px; height: 21px; }
+  :root[data-theme="dark"] .logo-mark img { filter: brightness(.18); }
+  #appearanceToggle {
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 6px 9px;
+    background: var(--bg-panel);
+    color: var(--ink);
+    white-space: nowrap;
+    font: 600 12px Geist, system-ui, sans-serif;
+    cursor: pointer;
+  }
+  #appearanceToggle:hover { background: var(--bg-soft); color: var(--accent); }
 
   .breadcrumb {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 12px;
     color: var(--ink-soft);
     text-transform: uppercase;
@@ -112,7 +173,7 @@
     display: flex;
     align-items: center;
     gap: 20px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 12px;
   }
   #dataStatusBadge {
@@ -148,7 +209,7 @@
     padding: 6px 14px;
     border-radius: 6px;
     cursor: pointer;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -170,7 +231,7 @@
   }
 
   .panel-title {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.12em;
@@ -200,7 +261,7 @@
     padding: 12px;
   }
   .stat-card .label {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 9px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
@@ -208,7 +269,7 @@
     margin-bottom: 4px;
   }
   .stat-card .value {
-    font-family: 'Fraunces', serif;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 24px;
     font-weight: 600;
     letter-spacing: -0.02em;
@@ -238,7 +299,7 @@
   }
   .item .name { font-weight: 500; }
   .item .meta {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 11px;
     color: var(--ink-faint);
   }
@@ -275,10 +336,10 @@
     display: flex;
     gap: 8px;
     z-index: 5;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 11px;
     color: var(--ink-soft);
-    background: rgba(255,255,255,0.85);
+    background: var(--bg-panel);
     backdrop-filter: blur(6px);
     padding: 8px 12px;
     border-radius: 6px;
@@ -304,19 +365,19 @@
     color: var(--ink);
     cursor: pointer;
     font-size: 18px;
-    font-family: 'Outfit', sans-serif;
+    font-family: Geist, system-ui, sans-serif;
     border-bottom: 1px solid var(--line-soft);
   }
   .map-zoom-controls button:last-child { border-bottom: none; }
   .map-zoom-controls button:hover { background: var(--accent); color: white; }
 
   .legend-pill {
-    background: rgba(255,255,255,0.9);
+    background: var(--bg-panel);
     backdrop-filter: blur(6px);
     border: 1px solid var(--line-soft);
     border-radius: 20px;
     padding: 6px 12px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 11px;
     color: var(--ink);
     display: flex;
@@ -344,7 +405,7 @@
     margin-bottom: 16px;
   }
   .aircraft-card .callsign {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 20px;
     font-weight: 600;
     letter-spacing: 0.02em;
@@ -361,7 +422,7 @@
     letter-spacing: 0.08em;
   }
   .aircraft-card .route {
-    font-family: 'Fraunces', serif;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 15px;
     color: var(--ink-soft);
     margin-top: 4px;
@@ -379,21 +440,21 @@
     text-align: left;
   }
   .telem .label {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 9px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--ink-faint);
   }
   .telem .value {
-    font-family: 'Fraunces', serif;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 20px;
     font-weight: 600;
     letter-spacing: -0.01em;
     margin-top: 2px;
   }
   .telem .unit {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 10px;
     color: var(--ink-soft);
     margin-left: 2px;
@@ -403,7 +464,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -412,8 +473,8 @@
     margin-top: 10px;
   }
   .status-badge.cruise { background: rgba(46, 139, 87, 0.15); color: var(--ok); }
-  .status-badge.climb { background: rgba(224, 168, 0, 0.18); color: #8a6700; }
-  .status-badge.descent { background: rgba(255, 90, 31, 0.15); color: var(--accent-deep); }
+  .status-badge.climb { background: rgba(92, 142, 229, 0.16); color: var(--climb); }
+  .status-badge.descent { background: rgba(145, 104, 205, 0.15); color: var(--descent); }
   .status-badge.ground { background: rgba(90, 99, 112, 0.15); color: var(--ink-soft); }
   .status-badge.emergency { background: rgba(200, 48, 44, 0.15); color: var(--danger); }
 
@@ -438,21 +499,24 @@
     flex-direction: column;
     gap: 3px;
     padding: 8px 10px;
-    background: rgba(200, 48, 44, 0.08);
-    border: 1px solid rgba(200, 48, 44, 0.25);
+    background: rgba(var(--danger-rgb), 0.07);
+    border: 1px solid rgba(var(--danger-rgb), 0.25);
     border-radius: 6px;
     margin-bottom: 6px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 12px;
     font-weight: 600;
     color: var(--danger);
     letter-spacing: 0.03em;
-    animation: conflict-pulse 1.2s ease-in-out infinite alternate;
   }
+  .conflict-button { width: 100%; text-align: left; cursor: pointer; font-family: Geist, system-ui, sans-serif; }
+  .conflict-button[aria-pressed="true"] { border-color: var(--accent); background: var(--bg-soft); }
+  .conflict-button .resolution-detail { display: block; color: var(--ink-soft); font-size: 12px; }
+  .conflict-button .advice-ok { color: var(--ok); }
   .conflict-item .alert-tag {
     background: var(--danger);
-    color: white;
-    font-size: 9px;
+    color: var(--badge-ink);
+    font-size: 10px;
     font-weight: 700;
     padding: 2px 5px;
     border-radius: 3px;
@@ -469,6 +533,9 @@
     color: var(--ok);
     animation: none;
   }
+  .lost-item { color: var(--ink-soft); background: var(--bg); border-color: var(--line); }
+  .lost-item .alert-tag { background: var(--ink-soft) !important; }
+  .lost-item .resolution-detail { color: var(--ink-soft); }
   .resolved-tag {
     background: var(--ok) !important;
   }
@@ -488,7 +555,7 @@
 
   /* ===== RESOLUTION LOG ===== */
   .res-log-entry {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 10px;
     padding: 5px 6px;
     border-radius: 4px;
@@ -506,19 +573,20 @@
   /* ===== FOOTER ===== */
   footer {
     grid-area: footer;
-    background: var(--ink);
-    color: var(--bg);
+    background: var(--bg);
+    color: var(--ink);
+    border-top: 1px solid var(--line);
     display: flex;
     align-items: center;
     padding: 0 24px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 11px;
     letter-spacing: 0.05em;
     gap: 24px;
   }
   footer .ticker { display: flex; align-items: center; gap: 6px; }
   footer .ticker .label { color: var(--ink-faint); text-transform: uppercase; }
-  footer .ticker .value { color: var(--bg); }
+  footer .ticker .value { color: var(--ink); font-variant-numeric: tabular-nums; }
   footer .ticker .value.accent { color: var(--accent); }
 
   /* Scrollbar */
@@ -533,7 +601,7 @@
     border: 1px solid var(--line);
     border-radius: 6px;
     background: var(--bg-panel);
-    font-family: 'Outfit', sans-serif;
+    font-family: Geist, system-ui, sans-serif;
     font-size: 13px;
     margin-bottom: 10px;
     outline: none;
@@ -551,20 +619,25 @@
     border-left: 3px solid var(--accent);
   }
 </style>
+<link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
 
 <header>
-  <div class="logo">Watchyo<span>Jet</span> ATC</div>
+  <div class="logo"><span class="logo-mark"><img src="watchyojet-logo.svg" alt=""></span>WatchYoJet</div>
+  <div class="header-right">
+    <span id="dataStatusBadge" role="status">Starting</span>
+    <div id="clockUTC">00:00:00 UTC</div>
+    <button id="appearanceToggle" type="button" aria-pressed="false">Dark mode</button>
+  </div>
+</header>
+
+<div class="workspace-nav">
   <button class="back-btn" id="backBtn" disabled>← Back</button>
   <nav class="breadcrumb" id="breadcrumb">
     <div class="crumb active" data-level="0">Globe</div>
   </nav>
-  <div class="header-right">
-    <span id="dataStatusBadge" role="status">Starting</span>
-    <div id="clockUTC">00:00:00 UTC</div>
-  </div>
-</header>
+</div>
 
 <aside class="sidebar">
   <div class="panel-section">
@@ -573,7 +646,7 @@
     <div class="item-list" id="itemList"></div>
   </div>
   <div class="panel-section">
-    <div class="panel-title">SYSTEM</div>
+    <div class="panel-title">Overview</div>
     <div class="stat-grid">
       <div class="stat-card accent">
         <div class="label">Tracked</div>
@@ -604,8 +677,8 @@
   <canvas id="mapCanvas"></canvas>
   <div class="map-overlay-top">
     <div class="legend-pill"><span class="dot" style="background:var(--ok)"></span>Level</div>
-    <div class="legend-pill"><span class="dot" style="background:var(--warn)"></span>Climb</div>
-    <div class="legend-pill"><span class="dot" style="background:var(--accent)"></span>Descent</div>
+    <div class="legend-pill"><span class="dot" style="background:var(--climb)"></span>Climb</div>
+    <div class="legend-pill"><span class="dot" style="background:var(--descent)"></span>Descent</div>
     <div class="legend-pill"><span class="dot" style="background:var(--danger)"></span>Conflict</div>
   </div>
   <div class="map-overlay-bottom" id="cursorCoords">LAT 0.00° · LON 0.00°</div>
@@ -619,22 +692,25 @@
 
 <aside class="right-panel">
   <div class="panel-section" id="conflictPanelSection" style="display:none">
-    <div class="panel-title" style="color:var(--danger)">CONFLICT STATUS <span class="count" id="conflictCount">0</span></div>
-    <div class="resolution-detail cycle-stats" id="cycleStats"></div>
+    <div class="panel-title">Conflict status <span class="count" id="conflictCount">0</span></div>
+    <details class="report-summary">
+      <summary id="cycleHeadline">Traffic summary</summary>
+      <div class="resolution-detail cycle-stats" id="cycleStats"></div>
+    </details>
     <div id="conflictList"></div>
   </div>
   <div class="panel-section" id="resLogSection" style="display:none">
-    <div class="panel-title" style="color:var(--ok)">RESOLUTION LOG <span class="count" id="resLogCount">0</span></div>
+    <div class="panel-title">Resolution log <span class="count" id="resLogCount">0</span></div>
     <div id="resLogList"></div>
   </div>
   <div class="panel-section">
-    <div class="panel-title">SELECTED AIRCRAFT</div>
+    <div class="panel-title">Selected aircraft</div>
     <div id="aircraftDetail">
       <div class="empty-state">No aircraft selected<br><span style="font-size:11px">Click any aircraft on the map</span></div>
     </div>
   </div>
   <div class="panel-section">
-    <div class="panel-title">NEARBY TRAFFIC <span class="count" id="nearbyCount">0</span></div>
+    <div class="panel-title">Nearby traffic <span class="count" id="nearbyCount">0</span></div>
     <div id="nearbyList"></div>
   </div>
 </aside>
@@ -1293,6 +1369,27 @@ function pathPolys(polys) {
   }
 }
 
+const mapPalette = {};
+
+function setAppearance(dark) {
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  const css = getComputedStyle(document.documentElement);
+  for (const key of ['bg', 'bg-panel', 'ink', 'ink-soft', 'accent', 'ok', 'climb', 'descent',
+      'danger', 'sky', 'land', 'land-hi', 'boundary', 'airfield', 'runway',
+      'globe-water-center', 'globe-water-edge', 'globe-land', 'globe-grid', 'globe-rim']) {
+    mapPalette[key] = css.getPropertyValue('--' + key).trim();
+  }
+  const toggle = document.getElementById('appearanceToggle');
+  toggle.textContent = dark ? 'Light mode' : 'Dark mode';
+  toggle.setAttribute('aria-pressed', String(dark));
+  _needsRedraw = true;
+}
+
+document.getElementById('appearanceToggle').addEventListener('click', () => {
+  if (window.watchYoJetAppearance) window.watchYoJetAppearance.toggle();
+  else setAppearance(document.documentElement.dataset.theme !== 'dark');
+});
+
 function drawGrid() {
   ctx.save();
   ctx.strokeStyle = "rgba(0,0,0,0.04)";
@@ -1328,15 +1425,15 @@ function drawGlobe() {
   // Ocean sphere
   ctx.save();
   const grad = ctx.createRadialGradient(cx - scale*0.3, cy - scale*0.3, scale*0.2, cx, cy, scale);
-  grad.addColorStop(0, "#d7e4ef");
-  grad.addColorStop(1, "#8faabf");
+  grad.addColorStop(0, mapPalette["globe-water-center"]);
+  grad.addColorStop(1, mapPalette["globe-water-edge"]);
   ctx.fillStyle = grad;
   ctx.beginPath(); ctx.arc(cx, cy, scale, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 
   // Graticule
   ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.strokeStyle = mapPalette["globe-grid"];
   ctx.lineWidth = 0.8;
   for (let lat = -60; lat <= 60; lat += 30) {
     ctx.beginPath();
@@ -1363,9 +1460,9 @@ function drawGlobe() {
     let isHoveredDrill = state.hoveredCountry && COUNTRIES.find(c => c.code === state.hoveredCountry.code)?.neName === entry.name;
     ctx.save();
     pathPolys(entry.polys);
-    ctx.fillStyle = isHoveredDrill ? "#f0b48a" : "#e8dcc2";
+    ctx.fillStyle = isHoveredDrill ? mapPalette["land-hi"] : mapPalette["globe-land"];
     ctx.fill("evenodd");
-    ctx.strokeStyle = isHoveredDrill ? "#d94412" : "rgba(20,25,35,0.4)";
+    ctx.strokeStyle = isHoveredDrill ? mapPalette["accent"] : mapPalette["boundary"];
     ctx.lineWidth = isHoveredDrill ? 1.5 : 0.6;
     ctx.stroke();
     ctx.restore();
@@ -1373,7 +1470,7 @@ function drawGlobe() {
 
   // Edge ring
   ctx.save();
-  ctx.strokeStyle = "rgba(20,25,35,0.35)";
+  ctx.strokeStyle = mapPalette["globe-rim"];
   ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(cx, cy, scale, 0, Math.PI*2); ctx.stroke();
   ctx.restore();
@@ -1384,7 +1481,7 @@ function drawWorldBackground() {
   for (const entry of WORLD_ALL) {
     ctx.save();
     pathPolys(entry.polys);
-    ctx.fillStyle = "#e8dcc2";
+    ctx.fillStyle = mapPalette["land"];
     ctx.fill("evenodd");
     ctx.strokeStyle = "rgba(20,25,35,0.25)";
     ctx.lineWidth = 0.6;
@@ -1397,7 +1494,7 @@ function drawCountryHighlight(c) {
   if (!c.polys) return;
   ctx.save();
   pathPolys(c.polys);
-  ctx.fillStyle = "#f5e9ce";
+  ctx.fillStyle = mapPalette["land-hi"];
   ctx.fill("evenodd");
   ctx.strokeStyle = "rgba(20,25,35,0.65)";
   ctx.lineWidth = 1.2;
@@ -1409,11 +1506,11 @@ function drawStatePolygon(st, hovered, isSelected) {
   if (!st || !st.polys) return;
   ctx.save();
   pathPolys(st.polys);
-  if (isSelected) ctx.fillStyle = "rgba(255, 90, 31, 0.1)";
-  else if (hovered) ctx.fillStyle = "rgba(255, 90, 31, 0.18)";
-  else ctx.fillStyle = "rgba(255, 90, 31, 0.03)";
+  if (isSelected) ctx.fillStyle = "rgba(92,142,229,0.10)";
+  else if (hovered) ctx.fillStyle = "rgba(92,142,229,0.18)";
+  else ctx.fillStyle = "rgba(92,142,229,0.03)";
   ctx.fill("evenodd");
-  ctx.strokeStyle = hovered || isSelected ? "#d94412" : "rgba(20,25,35,0.5)";
+  ctx.strokeStyle = hovered || isSelected ? mapPalette["accent"] : mapPalette["boundary"];
   ctx.lineWidth = hovered || isSelected ? 1.6 : 0.7;
   ctx.stroke();
   ctx.restore();
@@ -1423,11 +1520,11 @@ function drawARTCCPolygon(s, hovered, isSelected) {
   if (!s || !s.polys) return;
   ctx.save();
   pathPolys(s.polys);
-  if (isSelected) ctx.fillStyle = "rgba(46, 139, 87, 0.14)";
-  else if (hovered) ctx.fillStyle = "rgba(46, 139, 87, 0.22)";
-  else ctx.fillStyle = "rgba(46, 139, 87, 0.06)";
+  if (isSelected) ctx.fillStyle = "rgba(92,142,229,0.09)";
+  else if (hovered) ctx.fillStyle = "rgba(92,142,229,0.14)";
+  else ctx.fillStyle = "rgba(92,142,229,0.03)";
   ctx.fill("evenodd");
-  ctx.strokeStyle = hovered || isSelected ? "#1e6b3a" : "rgba(46, 139, 87, 0.6)";
+  ctx.strokeStyle = mapPalette.boundary;
   ctx.lineWidth = hovered || isSelected ? 1.8 : 1.0;
   ctx.setLineDash(hovered || isSelected ? [] : [6, 4]);
   ctx.stroke();
@@ -1441,7 +1538,7 @@ function drawARTCCPolygon(s, hovered, isSelected) {
     ctx.fillStyle = "rgba(26,29,36,0.85)";
     ctx.strokeStyle = "rgba(255,255,255,0.8)";
     ctx.lineWidth = 3;
-    ctx.font = "700 13px 'JetBrains Mono', monospace";
+    ctx.font = "700 13px ui-monospace, 'SF Mono', monospace";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.strokeText(s.ident, p[0], p[1]);
@@ -1457,7 +1554,7 @@ function drawStateLabel(st) {
   if (dim < 30) return;
   ctx.save();
   ctx.fillStyle = "rgba(26,29,36,0.55)";
-  ctx.font = "600 10px 'JetBrains Mono', monospace";
+  ctx.font = "600 10px ui-monospace, 'SF Mono', monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(st.code, p[0], p[1]);
@@ -1470,8 +1567,8 @@ function drawCountryLabel(c) {
   if (!p) return;
   if (state.level === 0 && p[2] !== undefined && p[2] < 0.3) return;
   ctx.save();
-  ctx.fillStyle = "rgba(26,29,36,0.8)";
-  ctx.font = "600 11px 'JetBrains Mono', monospace";
+  ctx.fillStyle = mapPalette["ink-soft"];
+  ctx.font = "600 11px ui-monospace, 'SF Mono', monospace";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText(c.code, p[0], p[1]);
   ctx.restore();
@@ -1482,7 +1579,7 @@ function drawAirport(a, hovered) {
   if (!p) return;
   ctx.save();
   if (state.level === 3) {
-    ctx.strokeStyle = hovered ? "rgba(255,90,31,0.6)" : "rgba(20,25,35,0.22)";
+    ctx.strokeStyle = hovered ? mapPalette.accent : "rgba(20,25,35,0.22)";
     ctx.lineWidth = hovered ? 1.5 : 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
@@ -1490,13 +1587,13 @@ function drawAirport(a, hovered) {
     ctx.stroke();
     ctx.setLineDash([]);
   }
-  ctx.fillStyle = hovered ? "var(--accent)" : "#1a1d24";
+  ctx.fillStyle = hovered ? mapPalette["accent"] : mapPalette["ink"];
   ctx.beginPath();
   ctx.arc(p[0], p[1], hovered ? 6 : 4, 0, Math.PI*2);
   ctx.fill();
   ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
-  ctx.fillStyle = "#1a1d24";
-  ctx.font = "600 11px 'JetBrains Mono', monospace";
+  ctx.fillStyle = mapPalette["ink"];
+  ctx.font = "600 11px ui-monospace, 'SF Mono', monospace";
   ctx.textAlign = "left"; ctx.textBaseline = "middle";
   ctx.fillText(a.iata, p[0] + 10, p[1]);
   ctx.restore();
@@ -1509,13 +1606,13 @@ function drawAirportGround(a) {
   const pad = 0.02;
   const p1 = project(lon - pad, lat + pad*0.7);
   const p2 = project(lon + pad, lat - pad*0.7);
-  ctx.fillStyle = "#d4dbc2";
+  ctx.fillStyle = mapPalette["airfield"];
   ctx.fillRect(p1[0], p1[1], p2[0]-p1[0], p2[1]-p1[1]);
   // Apron
   const ap = 0.008;
   const a1 = project(lon - ap, lat + ap*0.6);
   const a2 = project(lon + ap, lat - ap*0.6);
-  ctx.fillStyle = "#b8bfc9";
+  ctx.fillStyle = mapPalette["boundary"];
   ctx.fillRect(a1[0], a1[1], a2[0]-a1[0], a2[1]-a1[1]);
 
   // Runways
@@ -1525,7 +1622,7 @@ function drawAirportGround(a) {
     const scaleDeg = 0.05;
     const rp1 = project(lon + dx1*scaleDeg, lat + dy1*scaleDeg);
     const rp2 = project(lon + dx2*scaleDeg, lat + dy2*scaleDeg);
-    ctx.lineWidth = 20; ctx.strokeStyle = "#1a1d24";
+    ctx.lineWidth = 20; ctx.strokeStyle = mapPalette["ink"];
     ctx.beginPath(); ctx.moveTo(rp1[0], rp1[1]); ctx.lineTo(rp2[0], rp2[1]); ctx.stroke();
     ctx.lineWidth = 2; ctx.strokeStyle = "#ffd84d";
     ctx.setLineDash([10, 8]);
@@ -1537,7 +1634,7 @@ function drawAirportGround(a) {
     const hdgDeg = ((Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360);
     const rn1 = Math.round(hdgDeg / 10).toString().padStart(2,'0');
     const rn2 = ((Math.round(hdgDeg/10)+18) % 36).toString().padStart(2,'0');
-    ctx.fillStyle = "#fff"; ctx.font = "700 12px 'JetBrains Mono', monospace";
+    ctx.fillStyle = "#fff"; ctx.font = "700 12px ui-monospace, 'SF Mono', monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.save(); ctx.translate(rp1[0]+dx*24, rp1[1]+dy*24); ctx.rotate(angle + Math.PI/2); ctx.fillText(rn1, 0, 0); ctx.restore();
     ctx.save(); ctx.translate(rp2[0]-dx*24, rp2[1]-dy*24); ctx.rotate(angle - Math.PI/2); ctx.fillText(rn2, 0, 0); ctx.restore();
@@ -1550,7 +1647,7 @@ function drawAirportGround(a) {
   ctx.fillRect(tp1[0], tp1[1], tp2[0]-tp1[0], tp2[1]-tp1[1]);
   ctx.strokeStyle = "#fff"; ctx.lineWidth = 1;
   ctx.strokeRect(tp1[0], tp1[1], tp2[0]-tp1[0], tp2[1]-tp1[1]);
-  ctx.fillStyle = "#fff"; ctx.font = "700 10px 'JetBrains Mono', monospace";
+  ctx.fillStyle = "#fff"; ctx.font = "700 10px ui-monospace, 'SF Mono', monospace";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText(a.iata + " TERMINAL", (tp1[0]+tp2[0])/2, (tp1[1]+tp2[1])/2);
   ctx.restore();
@@ -1583,7 +1680,7 @@ function drawPHLGround(a) {
     ctx.moveTo(p2[0]-nx*0.88, p2[1]-ny*0.88); ctx.lineTo(p2[0]+nx*0.88, p2[1]+ny*0.88);
     ctx.stroke();
     const angle = Math.atan2(dy, dx);
-    ctx.fillStyle = "#fff"; ctx.font = "bold 10px 'JetBrains Mono',monospace";
+    ctx.fillStyle = "#fff"; ctx.font = "bold 10px ui-monospace, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.save(); ctx.translate(p1[0]+Math.cos(angle)*20, p1[1]+Math.sin(angle)*20); ctx.rotate(angle+Math.PI/2); ctx.fillText(labelW, 0, 0); ctx.restore();
     ctx.save(); ctx.translate(p2[0]-Math.cos(angle)*20, p2[1]-Math.sin(angle)*20); ctx.rotate(angle-Math.PI/2); ctx.fillText(labelE, 0, 0); ctx.restore();
@@ -1613,8 +1710,8 @@ function drawPHLGround(a) {
   function lbl(dlon, dlat, text, color, font) {
     const p = pt(dlon, dlat);
     if (!p) return;
-    ctx.fillStyle = color || "#1a1d24";
-    ctx.font = font || "bold 10px 'JetBrains Mono',monospace";
+    ctx.fillStyle = color || mapPalette["ink"];
+    ctx.font = font || "bold 10px ui-monospace, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(text, p[0], p[1]);
   }
@@ -1622,15 +1719,15 @@ function drawPHLGround(a) {
   ctx.save();
 
   // ── Airport boundary / grass ──
-  fillBox(-0.030, +0.014, +0.028, -0.013, "#c6ceaa");
+  fillBox(-0.030, +0.014, +0.028, -0.013, mapPalette["airfield"]);
 
   // Grass strip between parallel runways
-  fillBox(-0.022, +0.004, +0.022, -0.006, "#b9c59d");
+  fillBox(-0.022, +0.004, +0.022, -0.006, mapPalette["land-hi"]);
 
   // ── Concrete apron areas ──
-  fillBox(-0.016, +0.0038, +0.013, -0.001, "#aab49f"); // main ramp between terminals
-  fillBox(-0.021, +0.004,  -0.016, +0.001, "#a8b29e"); // west apron / south apron
-  fillBox(+0.013, +0.001,  +0.024, -0.005, "#a8b29e"); // east cargo / west deicing apron
+  fillBox(-0.016, +0.0038, +0.013, -0.001, mapPalette["boundary"]); // main ramp between terminals
+  fillBox(-0.021, +0.004,  -0.016, +0.001, mapPalette["boundary"]); // west apron / south apron
+  fillBox(+0.013, +0.001,  +0.024, -0.005, mapPalette["boundary"]); // east cargo / west deicing apron
 
   // ── Taxiways ──
   ctx.strokeStyle = "#8a9a82"; ctx.lineWidth = 6;
@@ -1673,46 +1770,46 @@ function drawPHLGround(a) {
   // Terminal A East + A West (horseshoe shape, northeast section)
   fillBox(+0.004, +0.005, +0.012, +0.002, "#555e6a");
   strokeBox(+0.004, +0.005, +0.012, +0.002);
-  lbl(+0.008, +0.0035, "A EAST", "#fff", "bold 7px 'JetBrains Mono',monospace");
+  lbl(+0.008, +0.0035, "A EAST", "#fff", "bold 7px ui-monospace, monospace");
 
   fillBox(-0.004, +0.005, +0.004, +0.002, "#555e6a");
   strokeBox(-0.004, +0.005, +0.004, +0.002);
-  lbl(+0.000, +0.0035, "A WEST", "#fff", "bold 7px 'JetBrains Mono',monospace");
+  lbl(+0.000, +0.0035, "A WEST", "#fff", "bold 7px ui-monospace, monospace");
 
   // Terminal B (center)
   fillBox(+0.001, +0.002, +0.009, -0.001, "#555e6a");
   strokeBox(+0.001, +0.002, +0.009, -0.001);
-  lbl(+0.005, +0.0005, "B", "#fff", "bold 8px 'JetBrains Mono',monospace");
+  lbl(+0.005, +0.0005, "B", "#fff", "bold 8px ui-monospace, monospace");
 
   // Terminal C
   fillBox(-0.005, +0.002, +0.001, -0.001, "#555e6a");
   strokeBox(-0.005, +0.002, +0.001, -0.001);
-  lbl(-0.002, +0.0005, "C", "#fff", "bold 8px 'JetBrains Mono',monospace");
+  lbl(-0.002, +0.0005, "C", "#fff", "bold 8px ui-monospace, monospace");
 
   // Terminal D
   fillBox(-0.011, +0.002, -0.005, -0.001, "#555e6a");
   strokeBox(-0.011, +0.002, -0.005, -0.001);
-  lbl(-0.008, +0.0005, "D", "#fff", "bold 8px 'JetBrains Mono',monospace");
+  lbl(-0.008, +0.0005, "D", "#fff", "bold 8px ui-monospace, monospace");
 
   // Terminal E (south wing)
   fillBox(+0.002, -0.001, +0.010, -0.004, "#4d5762");
   strokeBox(+0.002, -0.001, +0.010, -0.004);
-  lbl(+0.006, -0.0025, "E", "#fff", "bold 8px 'JetBrains Mono',monospace");
+  lbl(+0.006, -0.0025, "E", "#fff", "bold 8px ui-monospace, monospace");
 
   // Terminal F (south-west)
   fillBox(-0.007, -0.001, +0.002, -0.004, "#4d5762");
   strokeBox(-0.007, -0.001, +0.002, -0.004);
-  lbl(-0.0025, -0.0025, "F", "#fff", "bold 8px 'JetBrains Mono',monospace");
+  lbl(-0.0025, -0.0025, "F", "#fff", "bold 8px ui-monospace, monospace");
 
   // FBO / North Apron terminal (far west)
   fillBox(-0.021, +0.009, -0.016, +0.006, "#3f4a55");
   strokeBox(-0.021, +0.009, -0.016, +0.006);
-  lbl(-0.0185, +0.0075, "FBO", "#ccc", "bold 7px 'JetBrains Mono',monospace");
+  lbl(-0.0185, +0.0075, "FBO", "#ccc", "bold 7px ui-monospace, monospace");
 
   // TWR marker
   const pTwr = pt(+0.016, +0.003);
   if (pTwr) {
-    ctx.fillStyle = "#c8302c"; ctx.font = "bold 8px 'JetBrains Mono',monospace";
+    ctx.fillStyle = mapPalette["danger"]; ctx.font = "bold 8px ui-monospace, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText("TWR", pTwr[0], pTwr[1]);
   }
@@ -1720,10 +1817,10 @@ function drawPHLGround(a) {
   // Airport label
   const pLabel = pt(+0.014, -0.012);
   if (pLabel) {
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillStyle = mapPalette["bg-panel"];
     ctx.fillRect(pLabel[0]-38, pLabel[1]-8, 148, 16);
     ctx.fillStyle = "#2e3528";
-    ctx.font = "bold 10px 'JetBrains Mono',monospace";
+    ctx.font = "bold 10px ui-monospace, monospace";
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText("PHL  PHILADELPHIA INTL", pLabel[0]-34, pLabel[1]);
   }
@@ -1732,11 +1829,11 @@ function drawPHLGround(a) {
 }
 
 function aircraftColor(a) {
-  if (a.status === "emergency") return "#c8302c";
-  if (a.status === "climb")     return "#e0a800";
-  if (a.status === "descent")   return "#ff5a1f";
-  if (a.status === "ground")    return "#5a6370";
-  return "#2e8b57";
+  if (a.status === "emergency") return mapPalette["danger"];
+  if (a.status === "climb")     return mapPalette["climb"];
+  if (a.status === "descent")   return mapPalette["descent"];
+  if (a.status === "ground")    return mapPalette["ink-soft"];
+  return mapPalette["ok"];
 }
 
 function drawAircraft(a, showLabel = true, highlighted = false) {
@@ -1747,7 +1844,7 @@ function drawAircraft(a, showLabel = true, highlighted = false) {
   const selected = state.selectedAircraftId === a.id;
   const hovered = state.hoverAircraftId === a.id;
   const showTelemetry = selected || hovered;
-  const color = highlighted ? "#c8302c" : aircraftColor(a);
+  const color = highlighted ? mapPalette["danger"] : aircraftColor(a);
 
   ctx.save();
   ctx.translate(p[0], p[1]);
@@ -1755,7 +1852,7 @@ function drawAircraft(a, showLabel = true, highlighted = false) {
 
   const size = selected ? 9 : (hovered ? 8 : 6.5);
   if (a.groundRole === "emrgveh") {
-    ctx.fillStyle = "#c8302c";
+    ctx.fillStyle = mapPalette["danger"];
     ctx.fillRect(-size*0.6, -size*0.5, size*1.2, size);
     ctx.strokeStyle = "#fff"; ctx.lineWidth = 1;
     ctx.strokeRect(-size*0.6, -size*0.5, size*1.2, size);
@@ -1797,20 +1894,20 @@ function drawAircraft(a, showLabel = true, highlighted = false) {
 
   const label = a.callsign;
   ctx.save();
-  ctx.font = "600 10px 'JetBrains Mono', monospace";
+  ctx.font = "600 10px ui-monospace, 'SF Mono', monospace";
   ctx.textAlign = "left"; ctx.textBaseline = "top";
   const labelX = p[0] + 10, labelY = p[1] - 6;
   const tw = label.length * 6.2; // estimate avoids expensive measureText()
   const h = showTelemetry ? 36 : 14;
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fillStyle = mapPalette["bg-panel"];
   ctx.fillRect(labelX - 2, labelY - 1, tw + 6, h);
   ctx.strokeStyle = color; ctx.lineWidth = 0.8;
   ctx.strokeRect(labelX - 2, labelY - 1, tw + 6, h);
-  ctx.fillStyle = "#1a1d24";
+  ctx.fillStyle = mapPalette["ink"];
   ctx.fillText(label, labelX + 1, labelY + 1);
   if (showTelemetry) {
-    ctx.fillStyle = "#5a6370";
-    ctx.font = "500 9px 'JetBrains Mono', monospace";
+    ctx.fillStyle = mapPalette["ink-soft"];
+    ctx.font = "500 9px ui-monospace, 'SF Mono', monospace";
     ctx.fillText(`${formatAltitude(a.alt)} · ${a.spd} kt`, labelX + 1, labelY + 13);
     ctx.fillText(`TRK ${String(a.hdg).padStart(3,'0')}°`, labelX + 1, labelY + 24);
   }
@@ -1821,11 +1918,11 @@ function draw() {
   ctx.clearRect(0, 0, state.width, state.height);
 
   if (state.level === 0) {
-    ctx.fillStyle = "#f4f1ec"; ctx.fillRect(0, 0, state.width, state.height);
+    ctx.fillStyle = mapPalette["bg"]; ctx.fillRect(0, 0, state.width, state.height);
     drawGlobe();
     for (const c of COUNTRIES) if (c.polys) drawCountryLabel(c);
   } else if (state.level === 4) {
-    ctx.fillStyle = "#d4dbc2"; ctx.fillRect(0, 0, state.width, state.height);
+    ctx.fillStyle = mapPalette["airfield"]; ctx.fillRect(0, 0, state.width, state.height);
     if (state.selectedAirport && state.selectedAirport.icao === 'KPHL') {
       drawPHLGround(state.selectedAirport);
     } else {
@@ -1833,7 +1930,7 @@ function draw() {
     }
   } else {
     // Flat map background
-    ctx.fillStyle = "#c9d8e6"; ctx.fillRect(0, 0, state.width, state.height);
+    ctx.fillStyle = mapPalette["sky"]; ctx.fillRect(0, 0, state.width, state.height);
     drawWorldBackground();
     drawGrid();
     if (state.selectedCountry) drawCountryHighlight(state.selectedCountry);
@@ -2064,7 +2161,7 @@ function renderNearbyList() {
   if (!visible.length) { el.innerHTML = `<div class="empty-state" style="padding:20px 10px">No traffic in view</div>`; return; }
   el.innerHTML = visible.map(a => `
     <div class="item" data-id="${a.id}" style="padding:8px 10px">
-      <span class="name" style="font-family:'JetBrains Mono',monospace;font-size:12px">${escapeHtml(a.callsign)}</span>
+      <span class="name" style="font-family:ui-monospace, monospace;font-size:12px">${escapeHtml(a.callsign)}</span>
       <span class="meta" style="display:flex;gap:8px;align-items:center">
         <span style="width:6px;height:6px;border-radius:50%;background:${aircraftColor(a)}"></span>
         ${formatAltitude(a.alt)}
@@ -2130,6 +2227,7 @@ const feedAircraft = new Map();
 let _lastSidebarCount = 0;
 let feedSource = null;
 let activeConflicts = [];
+let focusedConflictKey = null;
 const resolvedSet = new Map();   // recently cleared, keyed by aircraft pair
 let trafficMode = null;          // ADVISE (observed traffic), SIMULATE or DETECT_ONLY (scripted)
 let cycleCounters = null;
@@ -2248,12 +2346,13 @@ function renderConflictPanel() {
   section.style.display = '';
   countEl.textContent = activeConflicts.length;
 
+  const focusedAlert = document.activeElement?.dataset.conflictKey;
   const activeHtml = activeConflicts.map(conflict => {
     const timing = conflict.seconds === 0 ? 'Current proximity' : `CPA in ${conflict.seconds} s`;
     const age = _fmtDuration(now - conflict.firstSeen);
-    return `<div class="conflict-item"><div class="conflict-row"><span class="alert-tag">${escapeHtml(conflict.severity)}</span>${escapeHtml(conflict.callsign1)} ↔ ${escapeHtml(conflict.callsign2)}</div>` +
-      `<div class="resolution-detail">${timing} · ${conflict.distance.toFixed(1)} NM · active ${age}</div>` +
-      _adviceLine(conflict) + `</div>`;
+    return `<button type="button" class="conflict-item conflict-button" data-conflict-key="${escapeHtml(conflict.key)}" aria-pressed="${conflict.key === focusedConflictKey}"><span class="conflict-row"><span class="alert-tag">${escapeHtml(conflict.severity)}</span>${escapeHtml(conflict.callsign1)} ↔ ${escapeHtml(conflict.callsign2)}</span>` +
+      `<span class="resolution-detail">${timing} · ${conflict.distance.toFixed(1)} NM · active ${age}</span>` +
+      _adviceLine(conflict) + `</button>`;
   }).join('');
 
   const resolvedHtml = Array.from(resolvedSet.values()).map(v => {
@@ -2264,11 +2363,15 @@ function renderConflictPanel() {
         ? `<div class="resolution-detail">↳ ${escapeHtml(v.instruction)}</div>`
         : `<div class="resolution-detail">↳ Observed tracks no longer conflict</div>`;
     const tag = lost ? 'TRACK LOST' : 'CLEARED';
-    return `<div class="conflict-item resolved-item"><div class="conflict-row"><span class="alert-tag resolved-tag">${tag}</span>${escapeHtml(v.callsign1)} ↔ ${escapeHtml(v.callsign2)}</div>${resLine}</div>`;
+    return `<div class="conflict-item resolved-item ${lost ? 'lost-item' : ''}"><div class="conflict-row"><span class="alert-tag resolved-tag">${tag}</span>${escapeHtml(v.callsign1)} ↔ ${escapeHtml(v.callsign2)}</div>${resLine}</div>`;
   }).join('');
 
   renderCycleStats();
   list.innerHTML = activeHtml + resolvedHtml;
+  if (focusedAlert) {
+    Array.from(list.querySelectorAll('[data-conflict-key]'))
+      .find(button => button.dataset.conflictKey === focusedAlert)?.focus({preventScroll: true});
+  }
 }
 
 function _fmtDuration(ms) {
@@ -2280,26 +2383,26 @@ function _adviceLine(conflict) {
   const instruction = escapeHtml(conflict.instruction || '');
   switch (conflict.advice) {
     case 'CLEARS_IN_SIMULATION':
-      return `<div class="resolution-detail advice-ok">Proposed: ${instruction} · clears in simulation</div>`;
+      return `<span class="resolution-detail advice-ok">Proposed: ${instruction} · clears in simulation</span>`;
     case 'REJECTED_NEW_CONFLICT':
-      return `<div class="resolution-detail">Proposal rejected (${instruction}): creates a new conflict</div>`;
+      return `<span class="resolution-detail">Proposal rejected (${instruction}): creates a new conflict</span>`;
     case 'DOES_NOT_CLEAR':
-      return `<div class="resolution-detail">Proposed: ${instruction} · does not clear this pair</div>`;
+      return `<span class="resolution-detail">Proposed: ${instruction} · does not clear this pair</span>`;
     case 'NO_SAFE_MANEUVER':
-      return `<div class="resolution-detail">No safe maneuver found</div>`;
+      return `<span class="resolution-detail">No safe maneuver found</span>`;
     case 'SEPARATION_LOST':
       return instruction
-        ? `<div class="resolution-detail">Separation already lost · safety alert · best option: ${instruction}</div>`
-        : `<div class="resolution-detail">Separation already lost · safety alert</div>`;
+        ? `<span class="resolution-detail">Separation already lost · safety alert · best option: ${instruction}</span>`
+        : `<span class="resolution-detail">Separation already lost · safety alert</span>`;
     case 'CLEARING':
-      return `<div class="resolution-detail advice-ok">Separating · alert held until clear by a margin</div>`;
+      return `<span class="resolution-detail advice-ok">Separating · alert held until clear by a margin</span>`;
     case 'AWAITING_REPORT':
-      return `<div class="resolution-detail">Track coasting · held until a fresh report confirms separation</div>`;
+      return `<span class="resolution-detail">Track coasting · held until a fresh report confirms separation</span>`;
     case 'MANEUVER_IN_PROGRESS':
-      return `<div class="resolution-detail">Maneuver in progress</div>`;
+      return `<span class="resolution-detail">Maneuver in progress</span>`;
     default:
       return trafficMode === 'DETECT_ONLY'
-        ? `<div class="resolution-detail">Watching · maneuvers start after the preview</div>`
+        ? `<span class="resolution-detail">Watching · maneuvers start after the preview</span>`
         : '';
   }
 }
@@ -2309,6 +2412,9 @@ function renderCycleStats() {
   if (!el) return;
   if (!cycleCounters || trafficMode === null) { el.textContent = ''; return; }
   const c = cycleCounters;
+  document.getElementById('cycleHeadline').textContent = trafficMode === 'ADVISE'
+    ? `Live advisories · ${c.pairsClearedInTrial} clear in simulation`
+    : trafficMode === 'SIMULATE' ? 'Scripted traffic · simulation' : 'Scripted traffic · preview';
   if (trafficMode === 'ADVISE') {
     el.textContent = `Advisory only · ${c.alerts} alerts · ${c.pairsClearedInTrial} clear in simulation · ` +
       `${c.rejectedGroups} rejected · ${c.noSafeManeuver} without a safe maneuver · ` +
@@ -2328,6 +2434,7 @@ function applyCycleReport(report) {
   trafficMode = report.mode;
   cycleCounters = report.counters;
   activeConflicts = report.active;
+  if (!activeConflicts.some(conflict => conflict.key === focusedConflictKey)) focusedConflictKey = null;
 
   for (const conflict of report.active) resolvedSet.delete(conflict.key);
   for (const done of report.cleared) {
@@ -2355,6 +2462,7 @@ function resetTrafficDisplay() {
   feedAircraft.clear();
   pendingAircraft = null;
   activeConflicts = [];
+  focusedConflictKey = null;
   resolvedSet.clear();
   cycleCounters = null;
   resolutionHistory.length = 0;
@@ -2387,6 +2495,7 @@ function setDataStatus(status) {
   }
   el.textContent = {CONNECTING: 'Connecting', LIVE: 'OpenSky live', STALE: 'OpenSky cached', DEMO: 'Demo traffic', ERROR: 'Engine error'}[mode] ?? status;
   el.title = status;
+  el.dataset.mode = mode.toLowerCase();
   el.style.borderColor = {LIVE: 'var(--ok)', STALE: 'var(--warn)', ERROR: 'var(--danger)'}[mode] ?? 'var(--line)';
 }
 
@@ -2413,12 +2522,15 @@ function drawTraffic(aircraft) {
   const pairs = activeConflicts.filter(pair => onscreen.has(pair.id1) && onscreen.has(pair.id2));
   const selected = [...onscreen.values()].find(({track}) => track.id === state.selectedAircraftId)?.track.trackId;
   const selectedPairs = pairs.filter(pair => pair.id1 === selected || pair.id2 === selected);
-  const highlightedPairs = [...new Set([...selectedPairs.slice(0, 1), ...pairs])].slice(0, 3);
+  const focusedPair = pairs.find(pair => pair.key === focusedConflictKey);
+  const highlightedPairs = focusedPair ? [focusedPair]
+    : [...new Set([...selectedPairs.slice(0, 1), ...pairs])].slice(0, 3);
   const highlighted = new Set(highlightedPairs.flatMap(pair => [pair.id1, pair.id2]));
 
   if (highlightedPairs.length) {
     ctx.save();
-    ctx.strokeStyle = 'rgba(200,48,44,0.55)';
+    ctx.strokeStyle = mapPalette.danger;
+    ctx.globalAlpha = 0.63;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
     for (const pair of highlightedPairs) {
@@ -2445,6 +2557,24 @@ function drawTraffic(aircraft) {
   }
 }
 // ===== END JAVA BRIDGE INTEGRATION =====
+document.getElementById('conflictList').addEventListener('click', event => {
+  const button = event.target.closest('[data-conflict-key]');
+  if (!button) return;
+  focusedConflictKey = focusedConflictKey === button.dataset.conflictKey ? null : button.dataset.conflictKey;
+  const pair = activeConflicts.find(conflict => conflict.key === focusedConflictKey);
+  if (pair && state.level !== 0) {
+    const first = feedAircraft.get(pair.id1);
+    const second = feedAircraft.get(pair.id2);
+    if (first && second) {
+      state.view.cx = (first.lon + second.lon) / 2;
+      state.view.cy = (first.lat + second.lat) / 2;
+    }
+  }
+  renderConflictPanel();
+  _needsRedraw = true;
+});
+
+setAppearance(false);
 init();
 </script>
 </body>
