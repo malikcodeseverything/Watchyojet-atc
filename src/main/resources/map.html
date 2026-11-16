@@ -597,6 +597,7 @@
   </div>
   <div class="map-overlay-bottom" id="cursorCoords">LAT 0.00° · LON 0.00°</div>
   <div class="map-zoom-controls">
+    <button id="focusPHL" title="Focus on Philadelphia traffic" aria-label="Focus on Philadelphia traffic">PHL</button>
     <button id="zoomIn" title="Zoom in">+</button>
     <button id="zoomOut" title="Zoom out">−</button>
     <button id="resetView" title="Reset">⟲</button>
@@ -893,6 +894,7 @@ const AC_TYPES = ["B738","A320","B77W","A333","B763","A321","E190","B789","A359"
 // ---------- STATE ----------
 const state = {
   level: 0,              // 0=globe 1=country 2=state 3=artcc 4=airport-ground
+  focusPhiladelphia: false,
   selectedCountry: null,
   selectedState: null,
   selectedARTCC: null,
@@ -1124,7 +1126,8 @@ function updateViewForLevel() {
     state.view.cx = (b[0]+b[2])/2; state.view.cy = (b[1]+b[3])/2;
     state.view.scale = Math.min(W/(bw*1.2), H/(bh*1.2));
   } else if (state.level === 3) {
-    const b = state.selectedARTCC.bounds;
+    // Match the area requested by the live feed.
+    const b = state.focusPhiladelphia ? [-76.5, 38.8, -74.0, 40.9] : state.selectedARTCC.bounds;
     const bw = b[2]-b[0], bh = b[3]-b[1];
     state.view.cx = (b[0]+b[2])/2; state.view.cy = (b[1]+b[3])/2;
     state.view.scale = Math.min(W/(bw*1.2), H/(bh*1.2));
@@ -1162,7 +1165,7 @@ function updateUIForLevel() {
   }
   if (state.selectedARTCC) {
     crumbs.push(`<span class="sep">›</span>`);
-    crumbs.push(`<div class="crumb ${state.level===3?'active':''}" data-level="3">${state.selectedARTCC.ident} — ${state.selectedARTCC.name}</div>`);
+    crumbs.push(`<div class="crumb ${state.level===3?'active':''}" data-level="3">${state.focusPhiladelphia ? 'Philadelphia' : state.selectedARTCC.ident + ' — ' + state.selectedARTCC.name}</div>`);
   }
   if (state.selectedAirport) {
     crumbs.push(`<span class="sep">›</span>`);
@@ -1179,18 +1182,19 @@ function updateUIForLevel() {
   backBtn.disabled = state.level === 0;
 
   const modes = { 0:"GLOBE", 1:"COUNTRY", 2:"STATE", 3:"ARTCC", 4:"GROUND" };
-  modeLabel.textContent = modes[state.level];
+  modeLabel.textContent = state.focusPhiladelphia && state.level === 3 ? 'PHL TRAFFIC' : modes[state.level];
   const hints = {
     0: "Click any country on the globe to drill down.",
     1: "Click a state or select from the sidebar.",
     2: "Click an ARTCC sector to view that center's traffic.",
-    3: "Click any airport marker to view ground operations.",
-    4: "Ground ops: taxiing, takeoff, landing, emergency vehicles."
+    3: "Select an aircraft for details or an airport to see its layout.",
+    4: "Airport layout. Feed tracks are airborne."
   };
   hint.textContent = hints[state.level];
 }
 
 function jumpToLevel(lvl) {
+  if (lvl < 3) state.focusPhiladelphia = false;
   if (lvl < 4 && state.aircraft !== globalAircraft) state.aircraft = globalAircraft;
   if (lvl === 0) { state.selectedCountry = null; state.selectedState = null; state.selectedARTCC = null; state.selectedAirport = null; }
   else if (lvl === 1) { state.selectedState = null; state.selectedARTCC = null; state.selectedAirport = null; }
@@ -1315,10 +1319,20 @@ function selectState(s) {
   goToLevel(2);
 }
 function selectARTCC(s) {
+  state.focusPhiladelphia = false;
   state.selectedARTCC = s;
   state.selectedAirport = null;
   goToLevel(3);
 }
+function focusPhiladelphia() {
+  state.selectedCountry = COUNTRIES.find(country => country.code === 'USA');
+  state.selectedState = US_STATES_BY_CODE.PA;
+  state.selectedARTCC = ARTCC_SECTORS.find(center => center.ident === 'ZNY');
+  state.selectedAirport = null;
+  state.focusPhiladelphia = true;
+  goToLevel(3);
+}
+
 function selectAirport(a) {
   state.selectedAirport = a;
   state.aircraft = globalAircraft;
@@ -1922,7 +1936,7 @@ function _updateStats() {
   document.getElementById('statTracked').textContent = visible.length;
   document.getElementById('statAirborne').textContent = visible.filter(a => !a.onGround && a.status !== "ground").length;
   document.getElementById('statGround').textContent = visible.filter(a => a.onGround || a.status === "ground").length;
-  document.getElementById('statAlerts').textContent = visible.filter(a => a.status === "emergency").length;
+  document.getElementById('statAlerts').textContent = conflictSet.size;
   const sel = getVisibleAircraft().find(a => a.id === state.selectedAircraftId);
   document.getElementById('selectedLabel').textContent = sel ? sel.callsign : "—";
 }
@@ -2058,6 +2072,7 @@ canvas.addEventListener('wheel', (e) => {
   _needsRedraw = true; _cachedVisible = null;
 }, { passive: false });
 
+document.getElementById('focusPHL').addEventListener('click', focusPhiladelphia);
 document.getElementById('zoomIn').addEventListener('click', () => { state.view.scale *= 1.2; _needsRedraw = true; _cachedVisible = null; });
 document.getElementById('zoomOut').addEventListener('click', () => { state.view.scale /= 1.2; _needsRedraw = true; _cachedVisible = null; });
 document.getElementById('resetView').addEventListener('click', () => { updateViewForLevel(); _needsRedraw = true; _cachedVisible = null; });
@@ -2198,17 +2213,12 @@ function init() {
   bindInlineData();
   globalAircraft = [];
   state.aircraft = globalAircraft;
-  updateViewForLevel();
-  updateUIForLevel();
-  renderSidebar();
-  renderAircraftDetail();
+  focusPhiladelphia();
   draw();
   requestAnimationFrame(_rafLoop);
   setInterval(updateClock, 1000);
   updateClock();
 }
-init();
-
 
 // ===== JAVA BRIDGE INTEGRATION =====
 const feedAircraft = new Map();
@@ -2489,6 +2499,7 @@ draw = function() {
   ctx.restore();
 };
 // ===== END JAVA BRIDGE INTEGRATION =====
+init();
 </script>
 </body>
 </html>

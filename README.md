@@ -20,8 +20,8 @@ cd Watchyojet-atc
 mvn javafx:run -Dwatchyojet.demo=true
 ```
 
-The scripted scenario starts with ten aircraft and three predicted conflict
-pairs. Open the conflict panel and resolution history to follow the encounters.
+The map opens on Philadelphia. The scripted scenario starts with ten aircraft
+and three predicted conflict pairs. Open the conflict panel and resolution history to follow the encounters.
 The scenario restarts every minute. Demo traffic runs without an OpenSky account
 or a live feed.
 
