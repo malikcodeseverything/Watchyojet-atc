@@ -1,23 +1,26 @@
-# WatchyoJet ATC system documentation
+# WatchYoJet system documentation
 
 ## Traffic sources and state
 
 `Main` runs the engine on a background thread. Each cycle advances the
 simulation by two seconds. Live mode queries OpenSky for airborne traffic in
-a rectangular region around Philadelphia: every 20 seconds anonymously, or
-every 12 seconds when signed in with an OpenSky API client, which keeps a day
-of use within each tier's credit allowance (400 or 4,000 credits). Requests
-run on the same background loop, so request latency can delay a cycle.
+a rectangular region around Philadelphia every 20 seconds anonymously or
+every 12 seconds with an OpenSky API client. At one credit per request, a
+fresh anonymous allowance of 400 credits covers about 2 hours 13 minutes.
+A standard account's 4,000 credits cover about 13 hours 20 minutes at the
+authenticated polling interval. Requests run on the background loop, so
+request latency can delay a cycle. [OpenSky API credits](https://openskynetwork.github.io/opensky-api/rest.html#api-credits)
 
 `OpenSkyFetcher` reads true track, ground speed, vertical rate, transponder
 code and ADS-B emitter category, and prefers barometric altitude over
 geometric altitude when both are available. The emitter category (light,
 small, large, heavy, rotorcraft) sets the aircraft's performance class when
 it is reported; otherwise the class is estimated from speed and altitude. `AircraftManager`
-keys live aircraft by their ICAO24 addresses. Every successful snapshot
-replaces the tracked set and updates reported coordinates, altitude, track,
-and speed. In live mode the engine never edits these tracks, so every alert
-reflects where OpenSky reports the aircraft. [OpenSky state-vector reference](https://openskynetwork.github.io/opensky-api/rest.html)
+keys live aircraft by their ICAO24 addresses. Each successful snapshot
+updates the coordinates, altitude, track, and speed of aircraft in the
+response. Aircraft omitted from a snapshot can temporarily coast. Between
+reports the app extrapolates live positions and altitudes. Proposed maneuvers
+are tested on copies and never applied to the live tracks. [OpenSky state-vector reference](https://openskynetwork.github.io/opensky-api/rest.html)
 
 If a poll fails, the app temporarily uses its latest successful snapshot and
 labels the source stale. If no usable snapshot is available or the snapshot is
@@ -129,7 +132,7 @@ or an estimate from speed and altitude, when evaluating maneuvers.
 
 ## ATC context and limitations
 
-WatchyoJet ATC models a subset of airborne conflict detection around an
+WatchYoJet models a subset of airborne conflict detection around an
 airport. Approach and departure controllers provide terminal-area traffic
 services. Tower and ground positions coordinate runway occupancy, taxi
 movements, crossings, takeoff, and landing. The simulator's airport drawings
@@ -138,7 +141,7 @@ provide geographic context for those facilities. [FAA facility classifications](
 The simulation's alert thresholds are a simplified version of the FAA
 radar minima, which also depend on surveillance mode, wake turbulence and
 the airspace class. Separation of VFR aircraft inside Class B airspace is
-not modeled. WatchyoJet uses public state vectors and straight-line
+not modeled. WatchYoJet uses public state vectors and straight-line
 trajectories for observed traffic. Observed traffic is assumed to hold its
 reported vertical rate, since OpenSky does not report assigned altitudes, and
 turns already in progress on live tracks are not predicted. Assigned

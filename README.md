@@ -1,11 +1,11 @@
-# WatchyoJet ATC
+# WatchYoJet
 
 [![Build and test](https://github.com/malikcodeseverything/Watchyojet-atc/actions/workflows/build.yml/badge.svg)](https://github.com/malikcodeseverything/Watchyojet-atc/actions/workflows/build.yml)
 
-WatchyoJet ATC is a Java desktop simulator for air traffic conflict detection
-and resolution around Philadelphia. It predicts where two aircraft will come
-closest, groups related conflicts, and tests simulated changes in altitude,
-track, or speed.
+WatchYoJet is a Java desktop simulator that predicts air traffic conflicts
+around Philadelphia using live OpenSky data. It tests proposed changes in
+altitude, track, or speed on simulated trajectories and includes a replayable
+offline demo.
 
 ![WatchYoJet in dark mode with live Philadelphia-area traffic and conflict advisories](Documentation/images/watchyojet-dark.png)
 
@@ -54,9 +54,12 @@ request quotas depend on OpenSky.
 
 ### Optional: an OpenSky account for longer live sessions
 
-Without an account, OpenSky allows 400 API credits a day, so the app polls
-every 20 seconds, which lasts a little over two hours of live traffic. A free
-account allows 4,000 credits a day, and the app then polls every 12 seconds.
+At one credit per Philadelphia-area request, 400 daily anonymous credits
+cover about 2 hours 13 minutes of uninterrupted polling at 20-second
+intervals. A standard account's 4,000 daily credits cover about 13 hours
+20 minutes at 12-second intervals. Actual runtime depends on remaining
+credits and request timing. [OpenSky API credits](https://openskynetwork.github.io/opensky-api/rest.html#api-credits)
+
 Create an API client on your OpenSky account page and pass its credentials
 through the environment:
 
@@ -106,15 +109,16 @@ an alert involving a coasting aircraft stays up until a fresh report confirms
 separation. If the track is dropped instead, the alert is reported as a lost
 track, never as a clearance.
 
-Live traffic is advisory only. The engine never changes an OpenSky track. Each
-alert keeps its identity across refreshes and shows the proposed instruction,
-for example "DAL123 climb and maintain 12,000 ft · clears in simulation". An
-alert is marked cleared only when the observed tracks stop triggering the
-detector. The offline demo applies accepted maneuvers to its scripted tracks.
+Live traffic is advisory only. Between OpenSky reports, the app extrapolates
+each track from its last reported ground speed, track direction, and vertical
+rate. Proposed maneuvers are tested on copies and stay separate from the live
+tracks. Each alert keeps its identity across refreshes and can show a proposed
+instruction, such as “DAL123 climb and maintain 12,000 ft · clears in
+simulation.” The offline demo applies accepted maneuvers to its scripted tracks.
 Every cycle logs how many alerts were detected, how many groups were accepted
 or rejected, and how many pairs clear in simulation.
 
-WatchyoJet ATC is an educational simulation. In the demo, assigned maneuvers
+WatchYoJet is an educational simulation. In the demo, assigned maneuvers
 are flown at realistic rates: each type's climb rate, standard-rate turns of
 3 degrees per second, and gradual speed changes. Trials account for the time a
 maneuver takes, so a climb through an occupied level, or a turn that closes on
@@ -154,11 +158,13 @@ since the previous tag.
 
 ## Project credits
 
-WatchyoJet began as a Temple University CIS 3296 team project. Hamza Malik
-maintains this portfolio fork and led the work to stabilize the demo, test
-the conflict engine, and prepare the desktop build for release. The Git
-history preserves contributions from Hamza Malik, Brandon Son, Dylan Vo,
-and the contributors behind the `RevengeChivalry` account. [Original course repository](https://github.com/cis3296s26/final-project-05-watchyojet)
+WatchYoJet began as a Temple University CIS 3296 team project. Hamza Malik
+led development and maintains the portfolio fork. His work includes improving
+live-feed reliability, expanding regression tests for conflict detection and
+maneuver validation, and preparing the replayable demo and desktop builds
+for release. The Git history preserves contributions from Hamza Malik,
+Brandon Son, Dylan Vo, and the contributors behind the `RevengeChivalry`
+account. [Original course repository](https://github.com/cis3296s26/final-project-05-watchyojet)
 
 No open-source license has been added. Reuse requires permission from the
 relevant contributors.
