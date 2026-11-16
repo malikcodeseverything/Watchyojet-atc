@@ -9,7 +9,25 @@ track, or speed.
 
 ![WatchyoJet ATC desktop interface from the project demo](Documentation/images/watchyojet-interface.jpg)
 
-## Run the demo
+## Download
+
+Ready-to-run builds for macOS (Apple Silicon), Windows, and Linux are on the
+[Releases page](https://github.com/malikcodeseverything/Watchyojet-atc/releases/latest).
+Each one bundles its own Java runtime, so nothing else needs to be installed.
+
+| Platform | File | Start it with |
+| --- | --- | --- |
+| macOS | `WatchyoJet-macos-arm64.zip` | `WatchyoJet.app` |
+| Windows | `WatchyoJet-windows-x64.zip` | `WatchyoJet\WatchyoJet.exe` |
+| Linux | `WatchyoJet-linux-x64.tar.gz` | `WatchyoJet/bin/WatchyoJet` |
+
+The builds are not code-signed. On macOS, right-click the app and choose
+**Open** the first time, or run `xattr -dr com.apple.quarantine WatchyoJet.app`.
+On Windows, choose **More info → Run anyway** if SmartScreen warns. The app
+starts on live traffic; pick **Simulation → Offline demo** for the scripted
+scenario.
+
+## Run from source
 
 Install a full JDK 21 or newer and Maven 3.8 or newer. Maven downloads the
 JavaFX and Jackson dependencies on the first build.
@@ -103,10 +121,15 @@ mvn clean verify
 mvn clean verify javafx:jlink
 ```
 
-GitHub Actions runs the test suite on Linux, macOS, and Windows. The
-`javafx:jlink` goal creates a platform-specific runtime in `target/watchyojet`.
-On macOS or Linux, run `./scripts/package-app.sh` with a full JDK to build
-an application image in `target/dist`.
+GitHub Actions runs the test suite on Linux, macOS, and Windows for every
+push. The `javafx:jlink` goal creates a platform-specific runtime in
+`target/watchyojet`, and `./scripts/package-app.sh` turns it into an
+application image in `target/dist` (on Windows, run it from Git Bash).
+
+Pushing a version tag such as `v1.0.0` runs the release workflow. It builds
+the application image on all three platforms, archives each one, and
+publishes them to a GitHub release with notes generated from the commits
+since the previous tag.
 
 ## Project structure
 

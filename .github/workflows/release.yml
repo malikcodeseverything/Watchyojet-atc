@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x64
+          - os: macos-latest
+            label: macos-arm64
+          - os: windows-latest
+            label: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build application image
+        shell: bash
+        run: scripts/package-app.sh
+
+      - name: Archive (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf WatchyoJet-${{ matrix.label }}.tar.gz -C target/dist WatchyoJet
+
+      - name: Archive (macOS)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent target/dist/WatchyoJet.app WatchyoJet-${{ matrix.label }}.zip
+
+      - name: Archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path target/dist/WatchyoJet -DestinationPath WatchyoJet-${{ matrix.label }}.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WatchyoJet-${{ matrix.label }}
+          path: WatchyoJet-${{ matrix.label }}.*
+          if-no-files-found: error
+
+  publish:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "WatchyoJet ${GITHUB_REF_NAME}" \
+            --generate-notes
