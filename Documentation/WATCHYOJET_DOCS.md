@@ -16,8 +16,11 @@ observation. [OpenSky state-vector reference](https://openskynetwork.github.io/o
 
 If a poll fails, the app temporarily uses its latest successful snapshot and
 labels the source stale. If no usable snapshot is available or the snapshot is
-older than 60 seconds when a poll fails, it loads scripted traffic. Explicit
-demo mode loads the scenario immediately and resets it every 60 seconds.
+older than 60 seconds after a poll failure, it loads scripted traffic. On HTTP
+429 the app waits for the retry interval supplied by OpenSky, or one minute
+when no usable interval is supplied. Cached traffic can expire during that
+wait. Explicit demo mode loads the scenario immediately and resets it every
+60 seconds.
 
 ## Prediction and maneuver search
 

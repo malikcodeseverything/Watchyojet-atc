@@ -5,12 +5,35 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.net.http.HttpHeaders;
+import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
 class OpenSkyFetcherTest {
 
     private final OpenSkyFetcher fetcher = new OpenSkyFetcher();
+
+    @Test
+    void honorsTheOpenSkyRetryDelayBeforeTheStandardHeader() {
+        HttpHeaders headers = HttpHeaders.of(Map.of(
+                "X-Rate-Limit-Retry-After-Seconds", List.of("120"),
+                "Retry-After", List.of("30")), (name, value) -> true);
+
+        assertEquals(120_000, OpenSkyFetcher.rateLimitDelayMillis(headers));
+    }
+
+    @Test
+    void usesTheStandardRetryDelayOrFallsBackWhenNoDelayIsUsable() {
+        HttpHeaders standard = HttpHeaders.of(Map.of(
+                "X-Rate-Limit-Retry-After-Seconds", List.of("invalid"),
+                "Retry-After", List.of("90")), (name, value) -> true);
+        HttpHeaders missing = HttpHeaders.of(Map.of(), (name, value) -> true);
+
+        assertEquals(90_000, OpenSkyFetcher.rateLimitDelayMillis(standard));
+        assertEquals(60_000, OpenSkyFetcher.rateLimitDelayMillis(missing));
+    }
 
     @Test
     void parsesValidRowsAndSkipsMalformedOrGroundTracks() throws IOException {

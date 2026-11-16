@@ -25,6 +25,8 @@ public class Main {
         OpenSkyFetcher  fetcher = new OpenSkyFetcher();
         ATCEngine       engine  = new ATCEngine();
         long lastApiFetchTime = -API_COOLDOWN_MS;
+        long apiPollDelay = API_COOLDOWN_MS;
+        boolean liveFetchFailed = false;
         long lastDemoResetTime = Long.MIN_VALUE;
         long lastSuccessfulFetchTime = Long.MIN_VALUE;
         String currentStatus = null;
@@ -49,9 +51,15 @@ public class Main {
                     lastDemoResetTime = now;
                 }
             } else {
-                if (now - lastApiFetchTime > API_COOLDOWN_MS) {
+                if (now - lastApiFetchTime >= apiPollDelay) {
                     System.out.println("\n[SYSTEM] Fetching LIVE traffic (PHL Airspace)...");
                     OpenSkyFetcher.FetchResult result = fetcher.fetchLiveTrafficResult();
+                    if (Thread.currentThread().isInterrupted()) break;
+
+                    now = System.currentTimeMillis();
+                    lastApiFetchTime = now;
+                    apiPollDelay = Math.max(API_COOLDOWN_MS, result.retryAfterMillis());
+                    liveFetchFailed = !result.successful();
                     if (result.successful()) {
                         manager.syncWithLiveData(result.aircraft());
                         System.out.println("[SYSTEM] Airspace refreshed. Tracking "
@@ -59,27 +67,26 @@ public class Main {
                         lastSuccessfulFetchTime = now;
                         fallbackDemoLoaded = false;
                         nominalStatus = "LIVE — OpenSky snapshot received";
-                        currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);
                     } else {
-                        boolean recentSnapshot = lastSuccessfulFetchTime != Long.MIN_VALUE
-                                && now - lastSuccessfulFetchTime <= MAX_STALE_MS;
-                        if (recentSnapshot && !manager.getAircrafts().isEmpty()) {
-                            System.out.println("[SYSTEM] " + result.message()
-                                    + "; retaining " + manager.getAircrafts().size()
-                                    + " last-known aircraft.");
-                            nominalStatus = "STALE — using a recent cached OpenSky snapshot";
-                            currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);
-                        } else {
-                            if (!fallbackDemoLoaded) {
-                                manager.reset(DemoScenario.build());
-                                fallbackDemoLoaded = true;
-                                System.out.println("[SYSTEM] Live data unavailable or stale; loaded demo traffic.");
-                            }
-                            nominalStatus = "DEMO — live data unavailable or older than 60 seconds";
-                            currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);
-                        }
+                        System.out.println("[SYSTEM] " + result.message()
+                                + "; retrying in " + apiPollDelay / 1000 + " seconds.");
                     }
-                    lastApiFetchTime = now;
+                }
+
+                if (liveFetchFailed && !fallbackDemoLoaded) {
+                    boolean recentSnapshot = lastSuccessfulFetchTime != Long.MIN_VALUE
+                            && now - lastSuccessfulFetchTime <= MAX_STALE_MS;
+                    if (recentSnapshot && !manager.getAircrafts().isEmpty()) {
+                        nominalStatus = "STALE — using a recent cached OpenSky snapshot";
+                    } else {
+                        manager.reset(DemoScenario.build());
+                        fallbackDemoLoaded = true;
+                        nominalStatus = "DEMO — live data unavailable or older than 60 seconds";
+                        System.out.println("[SYSTEM] Live data unavailable or stale; loaded demo traffic.");
+                    }
+                }
+                if (nominalStatus != null && (currentStatus == null || !currentStatus.startsWith("ERROR"))) {
+                    currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);
                 }
             }
 

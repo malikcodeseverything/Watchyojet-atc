@@ -3,12 +3,15 @@ package com.watchyojet.manager;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,7 +20,13 @@ import com.watchyojet.model.AircraftType;
 
 public class OpenSkyFetcher {
 
-    public record FetchResult(boolean successful, List<Aircraft> aircraft, String message) {
+    private static final long DEFAULT_RATE_LIMIT_DELAY_MS = 60_000;
+
+    public record FetchResult(boolean successful, List<Aircraft> aircraft, String message,
+                              long retryAfterMillis) {
+        public FetchResult(boolean successful, List<Aircraft> aircraft, String message) {
+            this(successful, aircraft, message, 0);
+        }
         public FetchResult {
             aircraft = List.copyOf(aircraft);
         }
@@ -53,6 +62,11 @@ public class OpenSkyFetcher {
             HttpResponse<String> response =
                     client.send(request, HttpResponse.BodyHandlers.ofString());
 
+            if (response.statusCode() == 429) {
+                return new FetchResult(false, List.of(), "OpenSky request limit reached",
+                        rateLimitDelayMillis(response.headers()));
+            }
+
             if (response.statusCode() != 200) {
                 String message = "OpenSky returned HTTP " + response.statusCode();
                 System.out.println("[FETCHER] " + message);
@@ -68,6 +82,23 @@ public class OpenSkyFetcher {
             System.out.println("[FETCHER] " + message);
             return new FetchResult(false, List.of(), message);
         }
+    }
+
+    static long rateLimitDelayMillis(HttpHeaders headers) {
+        return retryDelayMillis(headers, "X-Rate-Limit-Retry-After-Seconds")
+                .or(() -> retryDelayMillis(headers, "Retry-After"))
+                .orElse(DEFAULT_RATE_LIMIT_DELAY_MS);
+    }
+
+    private static Optional<Long> retryDelayMillis(HttpHeaders headers, String name) {
+        return headers.firstValue(name).flatMap(value -> {
+            try {
+                long seconds = Long.parseLong(value.trim());
+                return seconds > 0 ? Optional.of(TimeUnit.SECONDS.toMillis(seconds)) : Optional.empty();
+            } catch (NumberFormatException e) {
+                return Optional.empty();
+            }
+        });
     }
 
     FetchResult parseSnapshot(String body) throws IOException {
