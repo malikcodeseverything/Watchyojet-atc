@@ -69,4 +69,29 @@ public class ConflictDetectorTest {
 
         assertTrue(conflicts.size() >= 1);
     }
+
+    @Test
+    void detectsCurrentConflictBetweenParallelTracks() {
+        Aircraft a1 = new Aircraft("A1", 40.00, -75.0, 30000, 500, 0, AircraftType.A320);
+        Aircraft a2 = new Aircraft("A2", 39.97, -75.0, 30000, 500, 0, AircraftType.A320);
+
+        List<Conflict> conflicts = new ConflictDetector().detectConflicts(List.of(a1, a2));
+
+        assertEquals(1, conflicts.size());
+        assertEquals(0.0, conflicts.getFirst().getTCPA());
+        assertEquals(1.8, conflicts.getFirst().getDCPA(), 0.001);
+    }
+
+    @Test
+    void detectsCurrentConflictBetweenDivergingTracks() {
+        Aircraft a1 = new Aircraft("A1", 40.00, -75.0, 30000, 500,   0, AircraftType.A320);
+        Aircraft a2 = new Aircraft("A2", 39.97, -75.0, 30000, 500, 180, AircraftType.A320);
+        Aircraft a3 = new Aircraft("A3", 39.94, -75.0, 32000, 500, 180, AircraftType.A320);
+
+        List<Conflict> conflicts = new ConflictDetector().detectConflicts(List.of(a1, a2, a3));
+
+        assertEquals(1, conflicts.size());
+        assertEquals(0.0, conflicts.getFirst().getTCPA());
+        assertEquals(1.8, conflicts.getFirst().getDCPA(), 0.001);
+    }
 }

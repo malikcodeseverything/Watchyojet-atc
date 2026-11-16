@@ -28,9 +28,10 @@ public class ConflictDetector {
                 double altitudeDiff = Math.abs(
                         Math.round(a1.getAltitude()) - Math.round(a2.getAltitude()));
 
-                double tCPA = timeToCPA(a1, a2);
+                // Parallel and diverging tracks are closest at the start of the prediction.
+                double tCPA = Math.max(0, timeToCPA(a1, a2));
 
-                if (tCPA <= 0 || tCPA >= MAX_LOOKAHEAD_SECONDS) continue;
+                if (tCPA >= MAX_LOOKAHEAD_SECONDS) continue;
 
                 double cpaDistance = distanceAtCPA(a1, a2, tCPA);
 
