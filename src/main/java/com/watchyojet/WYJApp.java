@@ -5,9 +5,15 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
+import static java.lang.System.Logger.Level.INFO;
+
 import java.io.IOException;
 
+import com.watchyojet.util.Logs;
+
 public class WYJApp extends Application {
+
+    private static final System.Logger LOG = Logs.get(WYJApp.class);
 
     private WYJAppController controller;
 
@@ -25,7 +31,7 @@ public class WYJApp extends Application {
     }
     @Override
     public void stop() {
-        System.out.println("Killing Process...");
+        LOG.log(INFO, "Shutting down");
 
         if (controller != null) controller.shutdown();
     }

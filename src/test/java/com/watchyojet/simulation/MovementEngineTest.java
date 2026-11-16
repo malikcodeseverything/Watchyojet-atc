@@ -2,6 +2,7 @@ package com.watchyojet.simulation;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
@@ -74,5 +75,35 @@ public class MovementEngineTest {
 
         assertTrue(latChanged, "Latitude should change");
         assertTrue(lonChanged, "Longitude should change");
+    }
+
+    @Test
+    void turnsAtStandardRateTowardTheAssignedHeading() {
+        Aircraft a = new Aircraft("TURN", 40, -75, 20_000, 300, 350, AircraftType.B737);
+        a.setTargetHeading(20);   // 30 degrees right, through north
+        MovementEngine engine = new MovementEngine();
+
+        engine.updatePositions(List.of(a));
+        assertEquals(356, a.getHeading(), 1e-9, "6 degrees per 2 s cycle");
+
+        for (int i = 0; i < 4; i++) engine.updatePositions(List.of(a));
+        assertEquals(20, a.getHeading(), 1e-9);
+        assertTrue(Double.isNaN(a.getTargetHeading()), "target cleared once reached");
+    }
+
+    @Test
+    void climbsAtTheTypeRateAndLevelsOffAtTheAssignedAltitude() {
+        Aircraft a = new Aircraft("CLIMB", 40, -75, 20_000, 300, 90, AircraftType.B737);
+        a.setTargetAltitude(21_000);
+        MovementEngine engine = new MovementEngine();
+
+        engine.updatePositions(List.of(a));
+        assertEquals(20_080, a.getAltitude(), 1e-6, "2,400 ft/min is 80 ft per cycle");
+        assertEquals(2_400, a.getVerticalRate(), 1e-9);
+
+        for (int i = 0; i < 20; i++) engine.updatePositions(List.of(a));
+        assertEquals(21_000, a.getAltitude(), 1e-9);
+        assertEquals(0, a.getVerticalRate(), 1e-9);
+        assertTrue(Double.isNaN(a.getTargetAltitude()));
     }
 }

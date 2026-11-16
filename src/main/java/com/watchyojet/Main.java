@@ -1,5 +1,9 @@
 package com.watchyojet;
 
+import static java.lang.System.Logger.Level.ERROR;
+import static java.lang.System.Logger.Level.INFO;
+import static java.lang.System.Logger.Level.WARNING;
+
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -9,8 +13,11 @@ import com.watchyojet.engine.CycleMode;
 import com.watchyojet.manager.AircraftManager;
 import com.watchyojet.manager.OpenSkyFetcher;
 import com.watchyojet.simulation.DemoScenario;
+import com.watchyojet.util.Logs;
 
 public class Main {
+
+    private static final System.Logger LOG = Logs.get(Main.class);
 
     public static final boolean START_IN_DEMO = Boolean.getBoolean("watchyojet.demo");
 
@@ -38,7 +45,7 @@ public class Main {
         String nominalStatus = null;
         boolean fallbackDemoLoaded = false;
 
-        System.out.println("Initializing WatchyoJet ATC simulation...");
+        LOG.log(INFO, "Initializing WatchyoJet ATC simulation");
         while (running.get() && !Thread.currentThread().isInterrupted()) {
             long now = System.currentTimeMillis();
 
@@ -51,8 +58,8 @@ public class Main {
                 lastSuccessfulFetchTime = Long.MIN_VALUE;
                 liveFetchFailed = !demoMode && now - lastApiFetchTime < apiPollDelay;
                 fallbackDemoLoaded = false;
-                nominalStatus = demoMode ? "DEMO — deterministic offline traffic"
-                        : "CONNECTING — waiting for OpenSky";
+                nominalStatus = demoMode ? "DEMO · deterministic offline traffic"
+                        : "CONNECTING · waiting for OpenSky";
                 currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);
             }
 
@@ -63,13 +70,13 @@ public class Main {
                     engine = newEngine();
                     WYJAppController controller = WYJAppController.getInstance();
                     if (controller != null) controller.resetDemoDisplay();
-                    System.out.println("\n[DEMO] Scenario reset. Tracking "
+                    LOG.log(INFO, "[DEMO] Scenario reset. Tracking "
                             + manager.getAircrafts().size() + " aircraft.");
                     lastDemoResetTime = now;
                 }
             } else {
                 if (now - lastApiFetchTime >= apiPollDelay) {
-                    System.out.println("\n[SYSTEM] Fetching LIVE traffic (PHL Airspace)...");
+                    LOG.log(INFO, "[SYSTEM] Fetching live traffic around PHL");
                     OpenSkyFetcher.FetchResult result = fetcher.fetchLiveTrafficResult();
                     if (Thread.currentThread().isInterrupted()) break;
 
@@ -80,14 +87,14 @@ public class Main {
                     liveFetchFailed = !result.successful();
                     if (result.successful()) {
                         manager.syncWithLiveData(result.aircraft());
-                        System.out.println("[SYSTEM] Airspace refreshed. Tracking "
+                        LOG.log(INFO, "[SYSTEM] Airspace refreshed. Tracking "
                                 + manager.getAircrafts().size() + " live flights.");
                         lastSuccessfulFetchTime = now;
                         if (fallbackDemoLoaded) engine = newEngine();
                         fallbackDemoLoaded = false;
-                        nominalStatus = "LIVE — OpenSky snapshot received";
+                        nominalStatus = "LIVE · OpenSky snapshot received";
                     } else {
-                        System.out.println("[SYSTEM] " + result.message()
+                        LOG.log(WARNING, "[SYSTEM] " + result.message()
                                 + "; retrying in " + apiPollDelay / 1000 + " seconds.");
                     }
                 }
@@ -96,13 +103,13 @@ public class Main {
                     boolean recentSnapshot = lastSuccessfulFetchTime != Long.MIN_VALUE
                             && now - lastSuccessfulFetchTime <= MAX_STALE_MS;
                     if (recentSnapshot && !manager.getAircrafts().isEmpty()) {
-                        nominalStatus = "STALE — using a recent cached OpenSky snapshot";
+                        nominalStatus = "STALE · using a recent cached OpenSky snapshot";
                     } else {
                         manager.reset(DemoScenario.build());
                         engine = newEngine();
                         fallbackDemoLoaded = true;
-                        nominalStatus = "DEMO — live data unavailable or older than 60 seconds";
-                        System.out.println("[SYSTEM] Live data unavailable or stale; loaded demo traffic.");
+                        nominalStatus = "DEMO · live data unavailable or older than 60 seconds";
+                        LOG.log(WARNING, "[SYSTEM] Live data unavailable or stale; loaded demo traffic.");
                     }
                 }
                 if (nominalStatus != null && (currentStatus == null || !currentStatus.startsWith("ERROR"))) {
@@ -118,9 +125,9 @@ public class Main {
                     currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);
                 }
             } catch (RuntimeException e) {
-                e.printStackTrace(System.err);
+                LOG.log(ERROR, "Engine cycle failed", e);
                 currentStatus = publishStatusIfChanged(currentStatus,
-                        "ERROR — engine cycle failed; retrying");
+                        "ERROR · engine cycle failed; retrying");
             }
 
             try {

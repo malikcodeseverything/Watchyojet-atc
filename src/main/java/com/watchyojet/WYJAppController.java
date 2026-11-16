@@ -14,6 +14,8 @@ import javafx.scene.web.WebView;
 import javafx.application.Platform;
 import javafx.stage.Stage;
 
+import static java.lang.System.Logger.Level.WARNING;
+
 import java.net.URL;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,8 +28,10 @@ import com.watchyojet.engine.CycleListener;
 import com.watchyojet.engine.CycleReport;
 import com.watchyojet.model.Aircraft;
 import com.watchyojet.model.Conflict;
+import com.watchyojet.util.Logs;
 
 public class WYJAppController implements CycleListener {
+    private static final System.Logger LOG = Logs.get(WYJAppController.class);
     private static final ObjectMapper JSON = new ObjectMapper();
     private static WYJAppController instance;
     public static WYJAppController getInstance() {
@@ -69,7 +73,7 @@ public class WYJAppController implements CycleListener {
             Throwable error = spawnMainThread.getException();
             String detail = error == null ? "unknown error" : error.getMessage();
             log("Engine stopped unexpectedly: " + detail);
-            setDataStatus("ERROR — simulation engine stopped");
+            setDataStatus("ERROR · simulation engine stopped");
         });
 
         webEngine.getLoadWorker().stateProperty().addListener((observable, previous, state) -> {
@@ -310,7 +314,7 @@ public class WYJAppController implements CycleListener {
 
     private void reportWebError(String operation, RuntimeException error) {
         String message = "Web UI " + operation + " failed: " + error.getMessage();
-        System.err.println(message);
+        LOG.log(WARNING, message);
         log(message);
     }
 

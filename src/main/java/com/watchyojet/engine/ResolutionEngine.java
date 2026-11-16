@@ -16,7 +16,7 @@ public class ResolutionEngine {
     private static final double ALTITUDE_STEP     = 1000;   // ft per search step
     private static final double ALTITUDE_BUFFER   = 1000;   // ft minimum vertical separation
     private static final double MIN_ALTITUDE      = 3000;   // ft AGL floor for IFR
-    private static final double HIGH_ALT_FLOOR    = 18000;  // ft — FL180 IFR/VFR band boundary
+    private static final double HIGH_ALT_FLOOR    = 18000;  // ft, FL180 IFR/VFR band boundary
     private static final double PROXIMITY_NM      = 10.0;   // NM radius for altitude slot checks
     private static final double HDG_NEIGHBOR_NM   = 5.0;    // NM radius for heading safety checks
     private static final double SPEED_REDUCTION   = 0.90;   // conservative 10% reduction
@@ -154,7 +154,7 @@ public class ResolutionEngine {
 
         for (int delta : deltas) {
             double candidate = (currentHdg + delta + 360) % 360;
-            if (cpaSepWithHdg(moving, candidate, conflicting, committed)
+            if (cpaSeparation(moving, candidate, moving.getSpeed(), conflicting, committed)
                     < SeparationStandards.lateralMinimumNm(moving, conflicting)) continue;
 
             // ensure the turn does not create a new conflict with nearby traffic
@@ -163,7 +163,7 @@ public class ResolutionEngine {
                 if (neighbor == moving || neighbor == conflicting) continue;
                 if (distanceNM(moving.getLat(), moving.getLon(),
                                neighbor.getLat(), neighbor.getLon()) > HDG_NEIGHBOR_NM) continue;
-                if (cpaSepWithHdg(moving, candidate, neighbor, committed)
+                if (cpaSeparation(moving, candidate, moving.getSpeed(), neighbor, committed)
                         < SeparationStandards.lateralMinimumNm(moving, neighbor)) {
                     safe = false;
                     break;
@@ -190,14 +190,14 @@ public class ResolutionEngine {
         double minimum = Math.max(ABSOLUTE_SPEED_FLOOR,
                 moving.getType().getMinimumSafeSpeed());
         if (reduced < minimum) return null;
-        if (cpaSepWithSpeed(moving, reduced, conflicting, committed)
+        if (cpaSeparation(moving, getEffectiveHdg(moving, committed), reduced, conflicting, committed)
                 < SeparationStandards.lateralMinimumNm(moving, conflicting)) return null;
 
         for (Aircraft neighbor : all) {
             if (neighbor == moving || neighbor == conflicting) continue;
             if (Math.abs(getEffectiveAlt(moving, committed)
                     - getEffectiveAlt(neighbor, committed)) >= ALTITUDE_BUFFER) continue;
-            if (cpaSepWithSpeed(moving, reduced, neighbor, committed)
+            if (cpaSeparation(moving, getEffectiveHdg(moving, committed), reduced, neighbor, committed)
                     < SeparationStandards.lateralMinimumNm(moving, neighbor)) return null;
         }
         return Resolution.forSpeed(moving, reduced);
@@ -235,83 +235,39 @@ public class ResolutionEngine {
     // ── CPA with heading override ─────────────────────────────────────────────
 
     /**
-     * Computes the CPA distance between 'moving' (using newHdgDeg) and 'other'
-     * (using its committed or actual heading). Returns current separation if
-     * tracks are already diverging — the new heading didn't help, so the small
-     * current distance correctly fails the lateral minimum gate.
+     * Closest lateral distance between {@code moving}, flown at the given heading and speed, and
+     * {@code other} on its committed or actual track. Returns the current distance when the
+     * tracks are not converging, so a maneuver that leaves a pair inside the minimum fails the
+     * gate.
      */
-    private double cpaSepWithHdg(Aircraft moving, double newHdgDeg, Aircraft other,
-                                  Map<String, double[]> committed) {
-        double avgLat = (moving.getLat() + other.getLat()) / 2.0;
-        double cosLat = Math.cos(Math.toRadians(avgLat));
+    private double cpaSeparation(Aircraft moving, double headingDeg, double speedKt, Aircraft other,
+                                 Map<String, double[]> committed) {
+        double cosLat = Math.cos(Math.toRadians((moving.getLat() + other.getLat()) / 2.0));
+        double dx = (other.getLon() - moving.getLon()) * 60.0 * cosLat;
+        double dy = (other.getLat() - moving.getLat()) * 60.0;
 
-        double x1 = moving.getLon() * 60.0 * cosLat,  y1 = moving.getLat() * 60.0;
-        double x2 = other.getLon()  * 60.0 * cosLat,  y2 = other.getLat()  * 60.0;
-
-        double otherHdg = getEffectiveHdg(other, committed);
-        double vx1 = moving.getSpeed() * Math.sin(Math.toRadians(newHdgDeg));
-        double vy1 = moving.getSpeed() * Math.cos(Math.toRadians(newHdgDeg));
-        double vx2 = other.getSpeed()  * Math.sin(Math.toRadians(otherHdg));
-        double vy2 = other.getSpeed()  * Math.cos(Math.toRadians(otherHdg));
-
-        double dvx = vx2 - vx1,  dvy = vy2 - vy1;
-        double dx  = x2  - x1,   dy  = y2  - y1;
-        double dv2 = dvx * dvx + dvy * dvy;
-        double currentDist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dv2 == 0) return currentDist;
-        double tHours = -(dx * dvx + dy * dvy) / dv2;
-        if (tHours <= 0) return currentDist;
-
-        double tCPA = tHours * 3600.0;
-        double[] p1 = TrajectoryPredictor.predictPosition(moving, tCPA, newHdgDeg);
-        double[] p2 = TrajectoryPredictor.predictPosition(other,  tCPA);
-        return distanceNM(p1[0], p1[1], p2[0], p2[1]);
-    }
-
-    private double cpaSepWithSpeed(Aircraft moving, double newSpeed, Aircraft other,
-                                   Map<String, double[]> committed) {
-        double avgLat = (moving.getLat() + other.getLat()) / 2.0;
-        double cosLat = Math.cos(Math.toRadians(avgLat));
-        double x1 = moving.getLon() * 60.0 * cosLat, y1 = moving.getLat() * 60.0;
-        double x2 = other.getLon() * 60.0 * cosLat, y2 = other.getLat() * 60.0;
-
-        double movingHdg = getEffectiveHdg(moving, committed);
-        double otherHdg = getEffectiveHdg(other, committed);
-        double otherSpeed = getEffectiveSpd(other, committed);
-        double vx1 = newSpeed * Math.sin(Math.toRadians(movingHdg));
-        double vy1 = newSpeed * Math.cos(Math.toRadians(movingHdg));
-        double vx2 = otherSpeed * Math.sin(Math.toRadians(otherHdg));
-        double vy2 = otherSpeed * Math.cos(Math.toRadians(otherHdg));
-        double dvx = vx2 - vx1, dvy = vy2 - vy1;
-        double dx = x2 - x1, dy = y2 - y1;
-        double dv2 = dvx * dvx + dvy * dvy;
-        double currentDist = Math.sqrt(dx * dx + dy * dy);
-        if (dv2 == 0) return currentDist;
-
-        double tHours = -(dx * dvx + dy * dvy) / dv2;
-        if (tHours <= 0) return currentDist;
-        double seconds = tHours * 3600.0;
-        double[] p1 = predictPositionWithSpeed(moving, seconds, newSpeed, movingHdg);
-        double[] p2 = predictPositionWithSpeed(other, seconds, otherSpeed, otherHdg);
-        return distanceNM(p1[0], p1[1], p2[0], p2[1]);
-    }
-
-    private double[] predictPositionWithSpeed(Aircraft aircraft, double seconds,
-                                               double speed, double headingDeg) {
+        double otherHdg = Math.toRadians(getEffectiveHdg(other, committed));
+        double otherSpd = getEffectiveSpd(other, committed);
         double heading = Math.toRadians(headingDeg);
-        double distanceNm = speed * seconds / 3600.0;
-        double dLat = distanceNm * Math.cos(heading) / 60.0;
-        double dLon = distanceNm * Math.sin(heading)
-                / (60.0 * Math.cos(Math.toRadians(aircraft.getLat())));
-        return new double[]{aircraft.getLat() + dLat, aircraft.getLon() + dLon};
+        double dvx = otherSpd * Math.sin(otherHdg) - speedKt * Math.sin(heading);
+        double dvy = otherSpd * Math.cos(otherHdg) - speedKt * Math.cos(heading);
+
+        double dv2 = dvx * dvx + dvy * dvy;
+        double currentDist = Math.sqrt(dx * dx + dy * dy);
+        if (dv2 == 0) return currentDist;
+        double tHours = -(dx * dvx + dy * dvy) / dv2;
+        if (tHours <= 0) return currentDist;
+
+        double px = dx + dvx * tHours;
+        double py = dy + dvy * tHours;
+        return Math.sqrt(px * px + py * py);
     }
 
     // ── Search bounds ─────────────────────────────────────────────────────────
 
     private double[] getSearchBounds(Aircraft a, double effectiveAlt) {
         double maxAlt = a.getType().getMaxAltitude();
-        String phase  = derivePhase(effectiveAlt, a.getSpeed());
+        String phase  = Aircraft.flightPhase(effectiveAlt, a.getSpeed());
 
         double floor, ceiling;
         switch (phase) {
@@ -330,13 +286,6 @@ public class ResolutionEngine {
         else                                ceiling = Math.min(ceiling, HIGH_ALT_FLOOR - 1000);
 
         return new double[]{floor, ceiling};
-    }
-
-    private String derivePhase(double alt, double speed) {
-        if (alt < 1000  && speed < 150) return "TAKEOFF_LANDING";
-        if (alt < 3000  && speed < 250) return "FINAL_APPROACH";
-        if (alt < 10000)                return "CLIMB_DESCENT";
-        return "CRUISE";
     }
 
     // ── Committed state helpers ───────────────────────────────────────────────

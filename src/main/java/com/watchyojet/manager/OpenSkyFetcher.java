@@ -1,5 +1,7 @@
 package com.watchyojet.manager;
 
+import static java.lang.System.Logger.Level.WARNING;
+
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,8 +19,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.watchyojet.model.Aircraft;
 import com.watchyojet.model.AircraftType;
+import com.watchyojet.util.Logs;
 
 public class OpenSkyFetcher {
+
+    private static final System.Logger LOG = Logs.get(OpenSkyFetcher.class);
 
     private static final long DEFAULT_RATE_LIMIT_DELAY_MS = 60_000;
 
@@ -69,7 +74,7 @@ public class OpenSkyFetcher {
 
             if (response.statusCode() != 200) {
                 String message = "OpenSky returned HTTP " + response.statusCode();
-                System.out.println("[FETCHER] " + message);
+                LOG.log(WARNING, message);
                 return new FetchResult(false, List.of(), message);
             }
 
@@ -79,7 +84,7 @@ public class OpenSkyFetcher {
             return new FetchResult(false, List.of(), "OpenSky request interrupted");
         } catch (IOException e) {
             String message = "Failed to fetch OpenSky data: " + e.getMessage();
-            System.out.println("[FETCHER] " + message);
+            LOG.log(WARNING, message);
             return new FetchResult(false, List.of(), message);
         }
     }

@@ -69,8 +69,11 @@ detector. The offline demo applies accepted maneuvers to its scripted tracks.
 Every cycle logs how many alerts were detected, how many groups were accepted
 or rejected, and how many pairs clear in simulation.
 
-WatchyoJet ATC is an educational simulation. In the demo, maneuvers apply
-instantly to the scripted tracks. It models airborne conflicts and does not issue real
+WatchyoJet ATC is an educational simulation. In the demo, assigned maneuvers
+are flown at realistic rates: each type's climb rate, standard-rate turns of
+3 degrees per second, and gradual speed changes. Trials account for the time a
+maneuver takes, so a climb through an occupied level is rejected. It models
+airborne conflicts and does not issue real
 clearances or transmit instructions to aircraft. See the
 [system documentation](Documentation/WATCHYOJET_DOCS.md) for the data flow,
 limitations, and comparison with FAA procedures.

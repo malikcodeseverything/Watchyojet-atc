@@ -10,8 +10,9 @@ import com.watchyojet.model.Conflict;
 /**
  * Predicts losses of separation between pairs of aircraft.
  *
- * <p>Each aircraft is projected along a straight line at constant ground speed, track and
- * vertical rate. A pair is in conflict when the time window in which it is inside the lateral
+ * <p>Each aircraft is projected along a straight line at constant ground speed and track.
+ * Vertically it holds its reported rate, or, when it has an assigned altitude, climbs or
+ * descends at its type's rate and levels off there. A pair is in conflict when the time window in which it is inside the lateral
  * minimum overlaps the window in which it is inside the vertical minimum, within the lookahead.
  * Using both windows means a climbing aircraft is flagged only if it actually reaches the other
  * aircraft's level while they are laterally close.
@@ -64,43 +65,64 @@ public class ConflictDetector {
         }
         if (lateralStart >= lateralEnd) return Optional.empty();
 
-        // Vertical window: |dh + dvr t| < vertical, linear in t.
-        double dh = a2.getAltitude() - a1.getAltitude();
-        double dvr = (a2.getVerticalRate() - a1.getVerticalRate()) / 60.0;
-        double verticalStart;
-        double verticalEnd;
-        if (Math.abs(dvr) < 1e-9) {
-            if (Math.abs(dh) >= vertical) return Optional.empty();
-            verticalStart = Double.NEGATIVE_INFINITY;
-            verticalEnd = Double.POSITIVE_INFINITY;
-        } else {
-            double t1 = (-vertical - dh) / dvr;
-            double t2 = (vertical - dh) / dvr;
-            verticalStart = Math.min(t1, t2);
-            verticalEnd = Math.max(t1, t2);
+        // Vertical window: |dh(t)| < vertical. dh is piecewise linear, because an assigned climb
+        // or descent levels off at its target altitude. Find the first piece whose vertical
+        // window overlaps the lateral window.
+        double[] breaks = java.util.stream.DoubleStream.of(0, horizon,
+                        a1.secondsToLevelOff(), a2.secondsToLevelOff())
+                .filter(t -> t >= 0 && t <= horizon).sorted().distinct().toArray();
+        double start = Double.NaN;
+        double end = Double.NaN;
+        for (int i = 0; i + 1 < breaks.length && Double.isNaN(start); i++) {
+            double s = breaks[i];
+            double e = breaks[i + 1];
+            if (e <= s) continue;
+            double h0 = verticalGap(a1, a2, s);
+            double slope = (verticalGap(a1, a2, e) - h0) / (e - s);
+            double verticalStart;
+            double verticalEnd;
+            if (Math.abs(slope) < 1e-9) {
+                if (Math.abs(h0) >= vertical) continue;
+                verticalStart = s;
+                verticalEnd = e;
+            } else {
+                double t1 = s + (-vertical - h0) / slope;
+                double t2 = s + (vertical - h0) / slope;
+                verticalStart = Math.max(s, Math.min(t1, t2));
+                verticalEnd = Math.min(e, Math.max(t1, t2));
+            }
+            double overlapStart = Math.max(lateralStart, verticalStart);
+            double overlapEnd = Math.min(lateralEnd, verticalEnd);
+            if (overlapStart < overlapEnd) {
+                start = overlapStart;
+                end = overlapEnd;
+            }
         }
-
-        double start = Math.max(lateralStart, verticalStart);
-        double end = Math.min(lateralEnd, verticalEnd);
-        if (start >= end) return Optional.empty();
+        if (Double.isNaN(start)) return Optional.empty();
 
         // Report the closest lateral approach inside the window where both minima are infringed.
         double closest = qa < 1e-12 ? start : clamp(-qb / (2 * qa), start, end);
         double px = dx + dvx * closest;
         double py = dy + dvy * closest;
         double distance = Math.sqrt(px * px + py * py);
-        double altitudeDiff = Math.abs(dh + dvr * closest);
+        double altitudeDiff = Math.abs(verticalGap(a1, a2, closest));
 
         return Optional.of(new Conflict(a1, a2, classifySeverity(distance, altitudeDiff),
                 closest, distance));
     }
 
+    private static double verticalGap(Aircraft a1, Aircraft a2, double seconds) {
+        return a2.altitudeAfter(seconds) - a1.altitudeAfter(seconds);
+    }
+
+    // Prediction uses the assigned heading and speed when there is one, the way a conflict
+    // probe uses cleared intent rather than an aircraft caught halfway through a turn.
     private static double velocityX(Aircraft a) {
-        return a.getSpeed() * Math.sin(Math.toRadians(a.getHeading()));
+        return a.getIntendedSpeed() * Math.sin(Math.toRadians(a.getIntendedHeading()));
     }
 
     private static double velocityY(Aircraft a) {
-        return a.getSpeed() * Math.cos(Math.toRadians(a.getHeading()));
+        return a.getIntendedSpeed() * Math.cos(Math.toRadians(a.getIntendedHeading()));
     }
 
     private static double clamp(double value, double min, double max) {

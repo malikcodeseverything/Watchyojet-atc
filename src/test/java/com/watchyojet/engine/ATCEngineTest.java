@@ -35,14 +35,27 @@ class ATCEngineTest {
     }
 
     @Test
-    void evaluatesAClearTrialWithoutChangingTheInputTracks() {
+    void evaluatesATrialWithoutChangingTheInputTracks() {
         var original = new ConflictDetector().detectConflicts(aircraft);
 
+        // Descending away from both neighbors creates no new conflict.
+        var trial = new ATCEngine().validateTrial(aircraft, original,
+                Map.of(moving.getId(), new double[]{28_000, Double.NaN, Double.NaN}));
+
+        assertTrue(trial.isPresent());
+        assertEquals(30_000, moving.getAltitude());
+        assertTrue(Double.isNaN(moving.getTargetAltitude()));
+    }
+
+    @Test
+    void rejectsAClimbThroughAnOccupiedLevel() {
+        var original = new ConflictDetector().detectConflicts(aircraft);
+
+        // FL320 is clear, but the climb passes FL310 while 1.8 NM from OTHER.
         var trial = new ATCEngine().validateTrial(aircraft, original,
                 Map.of(moving.getId(), new double[]{32_000, Double.NaN, Double.NaN}));
 
-        assertTrue(trial.orElseThrow().isEmpty());
-        assertEquals(30_000, moving.getAltitude());
+        assertTrue(trial.isEmpty());
     }
 
     @Test

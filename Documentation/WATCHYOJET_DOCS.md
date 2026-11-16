@@ -76,9 +76,14 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
    - `ADVISE` (live OpenSky traffic): nothing is applied. Each alert carries
      its proposed instruction and whether it clears in simulation. An alert
      is reported cleared only when the observed tracks stop triggering it.
-   - `SIMULATE` (scripted demo): accepted maneuvers are applied to the demo
+   - `SIMULATE` (scripted demo): accepted maneuvers are assigned to the demo
      tracks, and pairs they separate are reported cleared with the
-     instruction that cleared them.
+     instruction that cleared them. `MovementEngine` then flies each
+     assignment: the type's climb rate until level-off, a standard-rate turn
+     of 3 degrees per second, and speed changes of 1 knot per second.
+     Prediction uses the assigned altitude, heading and speed, the way a
+     conflict probe uses cleared intent, and trials use the same climb
+     profile, so a climb through an occupied level is rejected.
    - `DETECT_ONLY` (first eight seconds of the demo): alerts are shown and
      no maneuvers are evaluated.
 7. Every cycle produces a `CycleReport` with active alerts, cleared alerts,
@@ -112,6 +117,7 @@ The simulation's alert thresholds are a simplified version of the FAA
 radar minima, which also depend on surveillance mode, wake turbulence and
 the airspace class. Separation of VFR aircraft inside Class B airspace is
 not modeled. WatchyoJet uses public state vectors and straight-line
-trajectories with constant vertical rate. Maneuvers are instant changes in
-simulated state, and the model does not account for turn rate, level-off
-or controller and pilot coordination. [FAA radar separation](https://www.faa.gov/air_traffic/publications/atpubs/atc_html/chap5_section_5.html)
+trajectories. Observed traffic is assumed to hold its reported vertical rate,
+since OpenSky does not report assigned altitudes, and turns in progress are
+not predicted. The model does not account for wind, pilot response time or
+controller and pilot coordination. [FAA radar separation](https://www.faa.gov/air_traffic/publications/atpubs/atc_html/chap5_section_5.html)

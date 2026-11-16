@@ -22,6 +22,11 @@ public class Aircraft {
     private String squawk;        // transponder code, or null when not reported
     private int emitterCategory;  // ADS-B emitter category from OpenSky, 0 when unknown
 
+    // Assigned values the aircraft is moving toward (simulated traffic only), NaN when none.
+    private double targetAltitude = Double.NaN;
+    private double targetHeading = Double.NaN;
+    private double targetSpeed = Double.NaN;
+
     public Aircraft(String callsign, double lat, double lon,
                     double altitude, double speed, double heading,
                     AircraftType type) {
@@ -47,6 +52,9 @@ public class Aircraft {
         copy.verticalRate = verticalRate;
         copy.squawk = squawk;
         copy.emitterCategory = emitterCategory;
+        copy.targetAltitude = targetAltitude;
+        copy.targetHeading = targetHeading;
+        copy.targetSpeed = targetSpeed;
         return copy;
     }
 
@@ -79,6 +87,43 @@ public class Aircraft {
     public int getEmitterCategory() { return emitterCategory; }
     public void setEmitterCategory(int emitterCategory) { this.emitterCategory = emitterCategory; }
 
+    public double getTargetAltitude() { return targetAltitude; }
+    public void setTargetAltitude(double targetAltitude) { this.targetAltitude = targetAltitude; }
+
+    public double getTargetHeading() { return targetHeading; }
+    public void setTargetHeading(double targetHeading) { this.targetHeading = targetHeading; }
+
+    public double getTargetSpeed() { return targetSpeed; }
+    public void setTargetSpeed(double targetSpeed) { this.targetSpeed = targetSpeed; }
+
+    /** The heading the aircraft is flying or has been assigned, used for prediction. */
+    public double getIntendedHeading() {
+        return Double.isNaN(targetHeading) ? heading : targetHeading;
+    }
+
+    /** The speed the aircraft is flying or has been assigned, used for prediction. */
+    public double getIntendedSpeed() {
+        return Double.isNaN(targetSpeed) ? speed : targetSpeed;
+    }
+
+    /**
+     * Predicted altitude after {@code seconds}. With an assigned altitude the aircraft climbs or
+     * descends at its type's rate and levels off there; otherwise it holds its reported rate.
+     */
+    public double altitudeAfter(double seconds) {
+        if (Double.isNaN(targetAltitude)) return altitude + verticalRate * seconds / 60.0;
+        double remaining = targetAltitude - altitude;
+        double rate = type.getClimbRate() / 60.0;   // ft per second
+        double travel = rate * seconds;
+        return Math.abs(remaining) <= travel ? targetAltitude : altitude + Math.signum(remaining) * travel;
+    }
+
+    /** Seconds until an assigned climb or descent levels off, or 0 when there is none. */
+    public double secondsToLevelOff() {
+        if (Double.isNaN(targetAltitude)) return 0;
+        return Math.abs(targetAltitude - altitude) / (type.getClimbRate() / 60.0);
+    }
+
     public AircraftType getType() { return type; }
     public void setType(AircraftType type) { this.type = type; }
 
@@ -103,6 +148,10 @@ public class Aircraft {
     }
 
     public String getFlightPhase() {
+        return flightPhase(altitude, speed);
+    }
+
+    public static String flightPhase(double altitude, double speed) {
         if (altitude < 1000 && speed < 150) return "TAKEOFF_LANDING";
         if (altitude < 3000 && speed < 250) return "FINAL_APPROACH";
         if (altitude < 10000) return "CLIMB_DESCENT";

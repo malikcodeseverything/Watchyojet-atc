@@ -1,5 +1,7 @@
 package com.watchyojet.engine;
 
+import static java.lang.System.Logger.Level.INFO;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -21,6 +23,7 @@ import com.watchyojet.model.Aircraft;
 import com.watchyojet.model.Conflict;
 import com.watchyojet.model.Resolution;
 import com.watchyojet.simulation.MovementEngine;
+import com.watchyojet.util.Logs;
 
 /**
  * Runs one detection and resolution cycle at a time.
@@ -34,6 +37,8 @@ import com.watchyojet.simulation.MovementEngine;
  * {@link CycleMode#SIMULATE} accepted maneuvers are applied to the simulated tracks.
  */
 public class ATCEngine {
+
+    private static final System.Logger LOG = Logs.get(ATCEngine.class);
 
     // cooldown prevents re-resolving the same simulated aircraft every cycle
     private static final long COOLDOWN_MS = 15_000;
@@ -204,7 +209,7 @@ public class ATCEngine {
         if (simulate) {
             for (Map.Entry<String, double[]> change : accepted.entrySet()) {
                 for (Aircraft track : aircraft) {
-                    if (track.getId().equals(change.getKey())) applyTrialState(track, change.getValue());
+                    if (track.getId().equals(change.getKey())) assign(track, change.getValue());
                 }
                 resolutionCooldown.put(change.getKey(), now);
             }
@@ -284,7 +289,7 @@ public class ATCEngine {
                 continue;
             }
             Aircraft trial = track.copy();
-            applyTrialState(trial, changes);
+            assign(trial, changes);
             trialAircraft.add(trial);
         }
 
@@ -352,22 +357,27 @@ public class ATCEngine {
         }
     }
 
-    /** An assigned altitude is held level, so a climb or descent in progress stops in the trial. */
-    private static void applyTrialState(Aircraft aircraft, double[] state) {
+    /**
+     * Assigns a maneuver. The aircraft then moves toward it over the following cycles at its
+     * type's climb rate, a standard-rate turn and a gradual speed change, and prediction uses
+     * the assigned values, so a trial accounts for the time the maneuver takes.
+     */
+    private static void assign(Aircraft aircraft, double[] state) {
         if (!Double.isNaN(state[0])) {
-            aircraft.setAltitude(state[0]);
-            aircraft.setVerticalRate(0);
+            aircraft.setTargetAltitude(state[0]);
+            aircraft.setVerticalRate(Math.signum(state[0] - aircraft.getAltitude())
+                    * aircraft.getType().getClimbRate());
         }
-        if (!Double.isNaN(state[1])) aircraft.setHeading(state[1]);
-        if (!Double.isNaN(state[2])) aircraft.setSpeed(state[2]);
+        if (!Double.isNaN(state[1])) aircraft.setTargetHeading(state[1]);
+        if (!Double.isNaN(state[2])) aircraft.setTargetSpeed(state[2]);
     }
 
     private static void logNewAlert(Conflict conflict) {
-        System.out.printf("[ALERT] %s  %s  tCPA %.0f s  dCPA %.2f NM%n        %s%n        %s%n",
+        LOG.log(INFO, () -> String.format("[ALERT] %s  %s  tCPA %.0f s  dCPA %.2f NM%n        %s%n        %s",
                 conflict.getSeverity(), conflict.getA1().getCallsign() + " <-> "
                         + conflict.getA2().getCallsign(),
                 conflict.getTCPA(), conflict.getDCPA(),
-                describe(conflict.getA1()), describe(conflict.getA2()));
+                describe(conflict.getA1()), describe(conflict.getA2())));
     }
 
     /** One line per aircraft, so a log shows why a pair was flagged. */
@@ -382,12 +392,12 @@ public class ATCEngine {
     }
 
     private static void logCycle(CycleMode mode, Counters c) {
-        System.out.printf("[CYCLE] %s alerts=%d new=%d cleared=%d clearing=%d groups=%d"
+        LOG.log(INFO, () -> String.format("[CYCLE] %s alerts=%d new=%d cleared=%d clearing=%d groups=%d"
                         + " proposals=%d accepted=%d rejected=%d clearInTrial=%d noSafeManeuver=%d"
-                        + " separationLost=%d vfrTraffic=%d towerSuppressed=%d%n",
+                        + " separationLost=%d vfrTraffic=%d towerSuppressed=%d",
                 mode, c.alerts(), c.newAlerts(), c.clearedAlerts(), c.clearing(), c.groups(),
                 c.proposals(), c.acceptedGroups(), c.rejectedGroups(), c.pairsClearedInTrial(),
-                c.noSafeManeuver(), c.separationLost(), c.trafficAdvisories(), c.towerSuppressed());
+                c.noSafeManeuver(), c.separationLost(), c.trafficAdvisories(), c.towerSuppressed()));
     }
 
     // ── Conflict key ─────────────────────────────────────────────────────────
