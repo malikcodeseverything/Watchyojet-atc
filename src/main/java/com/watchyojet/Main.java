@@ -21,7 +21,6 @@ public class Main {
 
     public static final boolean START_IN_DEMO = Boolean.getBoolean("watchyojet.demo");
 
-    private static final long API_COOLDOWN_MS   = 12_000;
     private static final long DEMO_RESET_MS     = 60_000; // reset scenario every 60 s
     private static final long DEMO_PREVIEW_MS   = 8_000;
     private static final long MAX_STALE_MS      = 60_000;
@@ -35,8 +34,9 @@ public class Main {
         AircraftManager manager = new AircraftManager();
         OpenSkyFetcher  fetcher = new OpenSkyFetcher();
         ATCEngine       engine  = newEngine();
-        long lastApiFetchTime = -API_COOLDOWN_MS;
-        long apiPollDelay = API_COOLDOWN_MS;
+        long basePollDelay = fetcher.recommendedPollMillis();
+        long lastApiFetchTime = -basePollDelay;
+        long apiPollDelay = basePollDelay;
         boolean liveFetchFailed = false;
         Boolean demoMode = null;
         long lastDemoResetTime = Long.MIN_VALUE;
@@ -46,6 +46,10 @@ public class Main {
         boolean fallbackDemoLoaded = false;
 
         LOG.log(INFO, "Initializing WatchyoJet ATC simulation");
+        LOG.log(INFO, fetcher.isAuthenticated()
+                ? "OpenSky: signing in with client credentials, polling every " + basePollDelay / 1000 + " s"
+                : "OpenSky: anonymous access, polling every " + basePollDelay / 1000 + " s"
+                        + " (set OPENSKY_CLIENT_ID and OPENSKY_CLIENT_SECRET for a higher daily allowance)");
         while (running.get() && !Thread.currentThread().isInterrupted()) {
             long now = System.currentTimeMillis();
 
@@ -82,13 +86,16 @@ public class Main {
 
                     now = System.currentTimeMillis();
                     lastApiFetchTime = now;
-                    apiPollDelay = Math.max(API_COOLDOWN_MS, result.retryAfterMillis());
+                    apiPollDelay = Math.max(basePollDelay, result.retryAfterMillis());
                     if (demoRequested.get()) continue;
                     liveFetchFailed = !result.successful();
                     if (result.successful()) {
                         manager.syncWithLiveData(result.aircraft());
+                        String credits = fetcher.creditsRemaining().isPresent()
+                                ? " OpenSky credits left today: " + fetcher.creditsRemaining().getAsLong() + "."
+                                : "";
                         LOG.log(INFO, "[SYSTEM] Airspace refreshed. Tracking "
-                                + manager.getAircrafts().size() + " live flights.");
+                                + manager.getAircrafts().size() + " live flights." + credits);
                         lastSuccessfulFetchTime = now;
                         if (fallbackDemoLoaded) engine = newEngine();
                         fallbackDemoLoaded = false;

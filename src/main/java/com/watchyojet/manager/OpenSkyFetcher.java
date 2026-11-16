@@ -1,18 +1,22 @@
 package com.watchyojet.manager;
 
+import static java.lang.System.Logger.Level.INFO;
 import static java.lang.System.Logger.Level.WARNING;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -41,14 +45,69 @@ public class OpenSkyFetcher {
     private static final String OPENSKY_URL =
         "https://opensky-network.org/api/states/all?lamin=38.8&lomin=-76.5&lamax=40.9&lomax=-74.0&extended=1";
 
+    static final String TOKEN_URL =
+        "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
+
+    /** Anonymous access allows 400 credits a day, so poll less often without an account. */
+    static final long ANONYMOUS_POLL_MS = 20_000;
+    /** A free OpenSky account allows 4,000 credits a day. */
+    static final long AUTHENTICATED_POLL_MS = 12_000;
+
+    /**
+     * OpenSky API client credentials (OAuth2 client credentials flow). Read from the
+     * {@code OPENSKY_CLIENT_ID} and {@code OPENSKY_CLIENT_SECRET} environment variables, or the
+     * {@code opensky.clientId} and {@code opensky.clientSecret} system properties.
+     */
+    public record Credentials(String clientId, String clientSecret) {
+        public static Optional<Credentials> fromEnvironment() {
+            String id = firstNonBlank(System.getProperty("opensky.clientId"), System.getenv("OPENSKY_CLIENT_ID"));
+            String secret = firstNonBlank(System.getProperty("opensky.clientSecret"),
+                    System.getenv("OPENSKY_CLIENT_SECRET"));
+            return id == null || secret == null ? Optional.empty() : Optional.of(new Credentials(id, secret));
+        }
+
+        @Override
+        public String toString() {
+            return "Credentials[clientId=" + clientId + ", clientSecret=hidden]";
+        }
+    }
+
+    record AccessToken(String value, long expiresAtMillis) {
+        boolean usableAt(long nowMillis) {
+            return nowMillis < expiresAtMillis;
+        }
+    }
+
     private final HttpClient   client;
     private final ObjectMapper mapper;
+    private final Optional<Credentials> credentials;
+    private AccessToken token;
+    private OptionalLong creditsRemaining = OptionalLong.empty();
 
     public OpenSkyFetcher() {
+        this(Credentials.fromEnvironment());
+    }
+
+    OpenSkyFetcher(Optional<Credentials> credentials) {
         this.client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
         this.mapper = new ObjectMapper();
+        this.credentials = credentials;
+    }
+
+    public boolean isAuthenticated() {
+        return credentials.isPresent();
+    }
+
+    /** Poll interval that keeps a day of use within the account's credit allowance. */
+    public long recommendedPollMillis() {
+        return isAuthenticated() ? AUTHENTICATED_POLL_MS : ANONYMOUS_POLL_MS;
+    }
+
+    /** Credits left today, as reported by the last response, when OpenSky sent the header. */
+    public OptionalLong creditsRemaining() {
+        return creditsRemaining;
     }
 
     public List<Aircraft> fetchLiveTraffic() {
@@ -57,15 +116,24 @@ public class OpenSkyFetcher {
 
     public FetchResult fetchLiveTrafficResult() {
         try {
-            HttpRequest request = HttpRequest.newBuilder()
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(OPENSKY_URL))
                     .timeout(Duration.ofSeconds(20))
                     .header("Accept", "application/json")
-                    .GET()
-                    .build();
+                    .GET();
+            Optional<String> bearer = accessToken();
+            bearer.ifPresent(value -> builder.header("Authorization", "Bearer " + value));
 
             HttpResponse<String> response =
-                    client.send(request, HttpResponse.BodyHandlers.ofString());
+                    client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+            creditsRemaining = headerLong(response.headers(), "X-Rate-Limit-Remaining");
+
+            if (response.statusCode() == 401 && bearer.isPresent()) {
+                token = null;   // fetch a fresh token on the next poll
+                String message = "OpenSky rejected the access token; signing in again next poll";
+                LOG.log(WARNING, message);
+                return new FetchResult(false, List.of(), message);
+            }
 
             if (response.statusCode() == 429) {
                 return new FetchResult(false, List.of(), "OpenSky request limit reached",
@@ -87,6 +155,68 @@ public class OpenSkyFetcher {
             LOG.log(WARNING, message);
             return new FetchResult(false, List.of(), message);
         }
+    }
+
+    /** A cached access token, refreshed shortly before it expires. Empty when anonymous. */
+    private Optional<String> accessToken() throws InterruptedException {
+        if (credentials.isEmpty()) return Optional.empty();
+        long now = System.currentTimeMillis();
+        if (token != null && token.usableAt(now)) return Optional.of(token.value());
+
+        Credentials c = credentials.get();
+        String form = "grant_type=client_credentials"
+                + "&client_id=" + URLEncoder.encode(c.clientId(), StandardCharsets.UTF_8)
+                + "&client_secret=" + URLEncoder.encode(c.clientSecret(), StandardCharsets.UTF_8);
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(TOKEN_URL))
+                .timeout(Duration.ofSeconds(20))
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.ofString(form))
+                .build();
+        try {
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                LOG.log(WARNING, "OpenSky sign-in failed with HTTP " + response.statusCode()
+                        + "; using anonymous access for this poll");
+                return Optional.empty();
+            }
+            token = parseToken(response.body(), now).orElse(null);
+            if (token == null) {
+                LOG.log(WARNING, "OpenSky sign-in returned no access token; using anonymous access");
+                return Optional.empty();
+            }
+            LOG.log(INFO, "Signed in to OpenSky");
+            return Optional.of(token.value());
+        } catch (IOException e) {
+            LOG.log(WARNING, "OpenSky sign-in failed: " + e.getMessage() + "; using anonymous access");
+            return Optional.empty();
+        }
+    }
+
+    /** Parses a token response. The token is treated as expiring a minute early. */
+    Optional<AccessToken> parseToken(String body, long nowMillis) throws IOException {
+        JsonNode root = mapper.readTree(body);
+        if (root == null || !root.path("access_token").isTextual()) return Optional.empty();
+        long expiresIn = root.path("expires_in").asLong(1800);
+        long safeSeconds = Math.max(0, expiresIn - 60);
+        return Optional.of(new AccessToken(root.path("access_token").textValue(),
+                nowMillis + TimeUnit.SECONDS.toMillis(safeSeconds)));
+    }
+
+    private static OptionalLong headerLong(HttpHeaders headers, String name) {
+        Optional<String> value = headers.firstValue(name);
+        if (value.isEmpty()) return OptionalLong.empty();
+        try {
+            return OptionalLong.of(Long.parseLong(value.get().trim()));
+        } catch (NumberFormatException e) {
+            return OptionalLong.empty();
+        }
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) return a.trim();
+        if (b != null && !b.isBlank()) return b.trim();
+        return null;
     }
 
     static long rateLimitDelayMillis(HttpHeaders headers) {

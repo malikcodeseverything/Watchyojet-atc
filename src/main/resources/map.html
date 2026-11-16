@@ -890,19 +890,6 @@ const AIRPORT_RUNWAYS = {
 };
 
 // Airlines for callsigns
-const AIRLINES = [
-  { code: "AAL", name: "American" }, { code: "UAL", name: "United" },
-  { code: "DAL", name: "Delta" }, { code: "BAW", name: "Speedbird" },
-  { code: "AFR", name: "Air France" }, { code: "DLH", name: "Lufthansa" },
-  { code: "UAE", name: "Emirates" }, { code: "QTR", name: "Qatari" },
-  { code: "ANA", name: "All Nippon" }, { code: "JAL", name: "Japan Air" },
-  { code: "SIA", name: "Singapore" }, { code: "KAL", name: "Korean Air" },
-  { code: "ACA", name: "Air Canada" }, { code: "CPA", name: "Cathay" },
-  { code: "KLM", name: "KLM" }, { code: "SWA", name: "Southwest" },
-  { code: "FDX", name: "FedEx" }, { code: "RYR", name: "Ryanair" },
-  { code: "EZY", name: "EasyJet" }, { code: "JBU", name: "JetBlue" },
-];
-const AC_TYPES = ["B738","A320","B77W","A333","B763","A321","E190","B789","A359","CRJ9","B739","A20N"];
 
 // ---------- STATE ----------
 const state = {
@@ -999,76 +986,8 @@ function bindInlineData() {
   }
 }
 
-// ---------- AIRCRAFT GENERATION ----------
+// ---------- AIRCRAFT IDS ----------
 let nextAcId = 1;
-const ALL_AIRPORTS = Object.values(ARTCC_AIRPORTS).flat();
-
-function randCS() {
-  const a = AIRLINES[Math.floor(Math.random() * AIRLINES.length)];
-  return a.code + (100 + Math.floor(Math.random() * 8900));
-}
-function randRoute() {
-  const o = ALL_AIRPORTS[Math.floor(Math.random()*ALL_AIRPORTS.length)];
-  let d = ALL_AIRPORTS[Math.floor(Math.random()*ALL_AIRPORTS.length)];
-  while (d.iata === o.iata) d = ALL_AIRPORTS[Math.floor(Math.random()*ALL_AIRPORTS.length)];
-  return `${o.iata} → ${d.iata}`;
-}
-function pickStatus() {
-  const r = Math.random();
-  if (r < 0.65) return "cruise";
-  if (r < 0.80) return "climb";
-  if (r < 0.95) return "descent";
-  return "emergency";
-}
-function seedEnrouteAircraft() {
-  const out = [];
-  for (let i = 0; i < 300; i++) {
-    const lon = -180 + Math.random() * 360;
-    const lat = -70 + Math.random() * 140;
-    const status = pickStatus();
-    const alt = status === "cruise" ? 33000 + Math.random()*7000
-              : status === "climb"  ? 8000 + Math.random()*15000
-              : status === "descent" ? 6000 + Math.random()*14000
-              : 18000 + Math.random()*20000;
-    out.push({
-      id: nextAcId++,
-      callsign: randCS(),
-      type: AC_TYPES[Math.floor(Math.random()*AC_TYPES.length)],
-      lon, lat,
-      alt: Math.round(alt/100)*100,
-      spd: Math.round(350 + Math.random()*180),
-      hdg: Math.floor(Math.random()*360),
-      status,
-      route: randRoute(),
-      squawk: String(Math.floor(1000 + Math.random()*6000)),
-      onGround: false,
-    });
-  }
-  // Bias some traffic to be inside ARTCC polygons for realism
-  for (const sector of ARTCC_SECTORS) {
-    if (sector.type !== "ARTCC") continue;
-    const c = sector.center;
-    for (let i = 0; i < 8; i++) {
-      const lon = c[0] + (Math.random()-0.5) * (sector.bounds[2]-sector.bounds[0]) * 0.7;
-      const lat = c[1] + (Math.random()-0.5) * (sector.bounds[3]-sector.bounds[1]) * 0.7;
-      const status = pickStatus();
-      out.push({
-        id: nextAcId++,
-        callsign: randCS(),
-        type: AC_TYPES[Math.floor(Math.random()*AC_TYPES.length)],
-        lon, lat,
-        alt: status === "cruise" ? 35000 + Math.random()*5000 : 12000 + Math.random()*18000,
-        spd: Math.round(380 + Math.random()*120),
-        hdg: Math.floor(Math.random()*360),
-        status,
-        route: randRoute(),
-        squawk: String(Math.floor(1000 + Math.random()*6000)),
-        onGround: false,
-      });
-    }
-  }
-  return out;
-}
 
 // ---------- PROJECTIONS ----------
 function lonLatToScreenFlat(lon, lat) {
@@ -1304,16 +1223,16 @@ function renderSidebar() {
 document.getElementById('searchInput').addEventListener('input', renderSidebar);
 
 // ---------- FILTERING HELPERS ----------
-function getCountryTrafficCount(c) {
-  if (!c.polys) return 0;
-  return globalAircraft.filter(a => pointInPolys(a.lon, a.lat, c.polys)).length;
+// Counts come from the live or demo feed, the only traffic the map shows.
+function countFeedIn(polys) {
+  if (!polys) return 0;
+  let n = 0;
+  for (const a of feedAircraft.values()) if (pointInPolys(a.lon, a.lat, polys)) n++;
+  return n;
 }
-function getStateTrafficCount(s) {
-  return globalAircraft.filter(a => pointInPolys(a.lon, a.lat, s.polys)).length;
-}
-function getARTCCTrafficCount(s) {
-  return globalAircraft.filter(a => pointInPolys(a.lon, a.lat, s.polys)).length;
-}
+function getCountryTrafficCount(c) { return countFeedIn(c.polys); }
+function getStateTrafficCount(s) { return countFeedIn(s.polys); }
+function getARTCCTrafficCount(s) { return countFeedIn(s.polys); }
 function stateIntersectsARTCC(st, artcc) {
   // bbox overlap check — good enough to filter sidebar
   const a = st.bounds, b = artcc.bounds;
@@ -2157,39 +2076,8 @@ function renderNearbyList() {
   });
 }
 
-// ---------- SIMULATION LOOP ----------
-function tickAircraftPositions() {
-  for (const a of state.aircraft) {
-    if (a.onGround && (a.groundRole === "holding" || a.groundRole === "pushback")) {
-      a.lon += (Math.random()-0.5) * 0.00005;
-      a.lat += (Math.random()-0.5) * 0.00005;
-      continue;
-    }
-    if (a.onGround) {
-      const speedDeg = a.spd * 0.0000003;
-      a.lon += Math.sin(a.hdg * Math.PI/180) * speedDeg * 5;
-      a.lat += Math.cos(a.hdg * Math.PI/180) * speedDeg * 5;
-      const [alon, alat] = state.selectedAirport.pos;
-      if (Math.hypot(a.lon-alon, a.lat-alat) > 0.035) {
-        a.hdg = (Math.atan2(alon-a.lon, alat-a.lat) * 180/Math.PI + 360) % 360;
-      } else if (Math.random() < 0.03) {
-        a.hdg = (a.hdg + (Math.random()-0.5)*40 + 360) % 360;
-      }
-    } else {
-      const speedDeg = a.spd / 3600 / 60;
-      a.lon += Math.sin(a.hdg * Math.PI/180) * speedDeg * 6;
-      a.lat += Math.cos(a.hdg * Math.PI/180) * speedDeg * 6;
-      if (a.lon > 180) a.lon -= 360;
-      if (a.lon < -180) a.lon += 360;
-      if (Math.random() < 0.004) a.hdg = (a.hdg + (Math.random()-0.5)*20 + 360) % 360;
-      if (a.status === "climb") a.alt = Math.min(a.alt + 50 + Math.random()*60, 40000);
-      if (a.status === "descent") a.alt = Math.max(a.alt - 40 - Math.random()*40, 2000);
-    }
-  }
-}
 
 // RAF render loop — replaces setInterval(tick, 300)
-let _rafLastSim = 0;
 let _rafLastDetail = 0;
 let _needsRedraw = true;   // dirty flag: draw only when something changed
 let _cachedVisible = null; // per-frame cache for getVisibleAircraft()
@@ -2198,12 +2086,6 @@ function _rafLoop(ts) {
   // Apply the latest aircraft snapshot — returns true when data changed
   if (flushAircraftSnapshot()) _needsRedraw = true;
 
-  // Simulation physics at 300ms cadence
-  if (ts - _rafLastSim >= 300) {
-    tickAircraftPositions();
-    _rafLastSim = ts;
-    _needsRedraw = true;
-  }
 
   if (_needsRedraw) {
     _cachedVisible = null; // invalidate per-frame cache
@@ -2245,6 +2127,7 @@ function init() {
 
 // ===== JAVA BRIDGE INTEGRATION =====
 const feedAircraft = new Map();
+let _lastSidebarCount = 0;
 let feedSource = null;
 let activeConflicts = [];
 const resolvedSet = new Map();   // recently cleared, keyed by aircraft pair
@@ -2336,6 +2219,11 @@ function flushAircraftSnapshot() {
 
   document.getElementById('feedCount').textContent = feedAircraft.size;
   _cachedVisible = null;
+  const nowMs = Date.now();
+  if (nowMs - _lastSidebarCount > 10000) {
+    _lastSidebarCount = nowMs;
+    renderSidebar();
+  }
   if (state.selectedAircraftId !== null) renderAircraftDetail();
   else renderNearbyList();
   return true;

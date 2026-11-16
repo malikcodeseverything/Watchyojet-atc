@@ -7,7 +7,7 @@ and resolution around Philadelphia. It predicts where two aircraft will come
 closest, groups related conflicts, and tests simulated changes in altitude,
 track, or speed.
 
-![WatchyoJet ATC desktop interface from the project demo](NEW_WatchyojetGUI.jpg)
+![WatchyoJet ATC desktop interface from the project demo](Documentation/images/watchyojet-interface.jpg)
 
 ## Run the demo
 
@@ -33,6 +33,24 @@ Offline demo**. If OpenSky is temporarily unavailable, the app labels cached
 tracks and falls back to scripted traffic when the cache expires. It returns
 to OpenSky automatically when requests succeed again. Live coverage and
 request quotas depend on OpenSky.
+
+### Optional: an OpenSky account for longer live sessions
+
+Without an account, OpenSky allows 400 API credits a day, so the app polls
+every 20 seconds, which lasts a little over two hours of live traffic. A free
+account allows 4,000 credits a day, and the app then polls every 12 seconds.
+Create an API client on your OpenSky account page and pass its credentials
+through the environment:
+
+```bash
+export OPENSKY_CLIENT_ID=your-client-id
+export OPENSKY_CLIENT_SECRET=your-client-secret
+mvn javafx:run
+```
+
+The app signs in with the OAuth2 client credentials flow, renews the token
+before it expires, and logs the credits left after each refresh. Credentials
+are never written to logs.
 
 ## How it works
 

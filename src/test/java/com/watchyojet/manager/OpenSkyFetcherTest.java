@@ -103,6 +103,29 @@ class OpenSkyFetcherTest {
     }
 
     @Test
+    void parsesAnAccessTokenAndTreatsItAsExpiringAMinuteEarly() throws IOException {
+        var token = fetcher.parseToken("{\"access_token\":\"abc\",\"expires_in\":1800}", 1_000).orElseThrow();
+
+        assertEquals("abc", token.value());
+        assertEquals(1_000 + 1_740_000, token.expiresAtMillis());
+        assertTrue(token.usableAt(1_740_000));
+        assertFalse(token.usableAt(1_741_000));
+        assertTrue(fetcher.parseToken("{\"error\":\"invalid_client\"}", 0).isEmpty());
+    }
+
+    @Test
+    void pollsLessOftenWithoutAnAccountAndNeverPrintsTheSecret() {
+        var credentials = new OpenSkyFetcher.Credentials("my-client", "s3cret");
+        var anonymous = new OpenSkyFetcher(java.util.Optional.empty());
+        var signedIn = new OpenSkyFetcher(java.util.Optional.of(credentials));
+
+        assertFalse(anonymous.isAuthenticated());
+        assertEquals(20_000, anonymous.recommendedPollMillis());
+        assertEquals(12_000, signedIn.recommendedPollMillis());
+        assertFalse(credentials.toString().contains("s3cret"));
+    }
+
+    @Test
     void distinguishesEmptyTrafficFromAnInvalidSnapshot() throws IOException {
         var empty = fetcher.parseSnapshot("{\"states\": []}");
         assertTrue(empty.successful());

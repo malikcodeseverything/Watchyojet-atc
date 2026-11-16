@@ -3,8 +3,10 @@
 ## Traffic sources and state
 
 `Main` runs the engine on a background thread. Each cycle advances the
-simulation by two seconds. Live mode queries OpenSky about every twelve seconds
-for airborne traffic in a rectangular region around Philadelphia. Requests
+simulation by two seconds. Live mode queries OpenSky for airborne traffic in
+a rectangular region around Philadelphia: every 20 seconds anonymously, or
+every 12 seconds when signed in with an OpenSky API client, which keeps a day
+of use within each tier's credit allowance (400 or 4,000 credits). Requests
 run on the same background loop, so request latency can delay a cycle.
 
 `OpenSkyFetcher` reads true track, ground speed, vertical rate, transponder
