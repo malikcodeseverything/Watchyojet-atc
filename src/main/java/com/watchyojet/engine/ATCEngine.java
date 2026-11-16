@@ -55,6 +55,7 @@ public class ATCEngine {
 
         if (conflicts.isEmpty()) {
             conflictPersistence.clear();
+            notifyConflicts(List.of(), List.of());
             updateMap(aircrafts);
             return;
         }
@@ -224,10 +225,10 @@ public class ATCEngine {
     private void notifyConflicts(List<Conflict> conflicts, List<String[]> resolvedPairs) {
         WYJAppController ctrl = WYJAppController.getInstance();
         if (ctrl == null) return;
-        List<String[]> allPairs = new ArrayList<>();
-        for (Conflict c : conflicts)
-            allPairs.add(new String[]{c.getA1().getCallsign(), c.getA2().getCallsign()});
-        ctrl.batchNotify(allPairs, resolvedPairs);
+        List<Conflict> ranked = conflicts.stream()
+                .sorted(Comparator.comparing(Conflict::getSeverity).thenComparingDouble(Conflict::getTCPA))
+                .toList();
+        ctrl.batchNotify(ranked, resolvedPairs);
     }
 
     private void updateMap(List<Aircraft> aircrafts) {

@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.watchyojet.model.Aircraft;
+import com.watchyojet.model.Conflict;
 
 public class WYJAppController {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -189,33 +190,22 @@ public class WYJAppController {
         });
     }
 
-    public void markConflict(String cs1, String cs2) {
+    public void batchNotify(List<Conflict> conflicts, List<String[]> resolvedPairs) {
+        final String activeJson;
+        try {
+            activeJson = JSON.writeValueAsString(conflicts.stream().map(conflict -> Map.of(
+                    "id1", conflict.getA1().getId(), "id2", conflict.getA2().getId(),
+                    "callsign1", conflict.getA1().getCallsign(), "callsign2", conflict.getA2().getCallsign(),
+                    "severity", conflict.getSeverity().name(), "seconds", Math.round(conflict.getTCPA()),
+                    "distance", conflict.getDCPA()
+            )).toList());
+        } catch (JsonProcessingException e) {
+            log("Unable to encode conflict update: " + e.getMessage());
+            return;
+        }
         Platform.runLater(() -> {
             try {
-                Object check = webEngine.executeScript("typeof markConflict !== 'undefined'");
-                if (check.equals(true)) {
-                    webEngine.executeScript("markConflict(" + json(cs1) + "," + json(cs2) + ")");
-                }
-            } catch (RuntimeException e) {
-                reportWebError("conflict marker", e);
-            }
-        });
-    }
-
-    public void batchNotify(List<String[]> conflictPairs, List<String[]> resolvedPairs) {
-        if (conflictPairs.isEmpty() && resolvedPairs.isEmpty()) return;
-        Platform.runLater(() -> {
-            try {
-                Object check = webEngine.executeScript("typeof markConflict !== 'undefined'");
-                if (!check.equals(true)) return;
-
-                for (String[] pair : conflictPairs) {
-                    try {
-                        webEngine.executeScript("markConflict(" + json(pair[0]) + "," + json(pair[1]) + ")");
-                    } catch (RuntimeException e) {
-                        reportWebError("conflict marker", e);
-                    }
-                }
+                webEngine.executeScript("setActiveConflicts(" + activeJson + ")");
 
                 if (!resolvedPairs.isEmpty()) {
                     for (String[] pair : resolvedPairs) {

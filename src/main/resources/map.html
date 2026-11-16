@@ -432,6 +432,7 @@
   }
 
   /* ===== CONFLICT PANEL ===== */
+  #conflictList { max-height: 240px; overflow-y: auto; }
   .conflict-item {
     display: flex;
     flex-direction: column;
@@ -603,7 +604,7 @@
     <div class="legend-pill"><span class="dot" style="background:var(--ok)"></span>Cruise</div>
     <div class="legend-pill"><span class="dot" style="background:var(--warn)"></span>Climb</div>
     <div class="legend-pill"><span class="dot" style="background:var(--accent)"></span>Descent</div>
-    <div class="legend-pill"><span class="dot" style="background:var(--danger)"></span>Emergency</div>
+    <div class="legend-pill"><span class="dot" style="background:var(--danger)"></span>Conflict</div>
   </div>
   <div class="map-overlay-bottom" id="cursorCoords">LAT 0.00° · LON 0.00°</div>
   <div class="map-zoom-controls">
@@ -1816,7 +1817,7 @@ function aircraftColor(a) {
   return "#2e8b57";
 }
 
-function drawAircraft(a) {
+function drawAircraft(a, showLabel = true, highlighted = false) {
   const p = project(a.lon, a.lat);
   if (!p) return;
   if (state.level === 0 && p[2] !== undefined && p[2] < 0.1) return;
@@ -1824,6 +1825,7 @@ function drawAircraft(a) {
   const selected = state.selectedAircraftId === a.id;
   const hovered = state.hoverAircraftId === a.id;
   const showTelemetry = selected || hovered;
+  const color = highlighted ? "#c8302c" : aircraftColor(a);
 
   ctx.save();
   ctx.translate(p[0], p[1]);
@@ -1836,7 +1838,7 @@ function drawAircraft(a) {
     ctx.strokeStyle = "#fff"; ctx.lineWidth = 1;
     ctx.strokeRect(-size*0.6, -size*0.5, size*1.2, size);
   } else {
-    ctx.fillStyle = aircraftColor(a);
+    ctx.fillStyle = color;
     ctx.beginPath();
     ctx.moveTo(size, 0);
     ctx.lineTo(-size*0.6, size*0.55);
@@ -1852,15 +1854,24 @@ function drawAircraft(a) {
 
   if (selected) {
     ctx.save();
-    ctx.strokeStyle = aircraftColor(a); ctx.lineWidth = 1.2;
+    ctx.strokeStyle = color; ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.arc(p[0], p[1], 16, 0, Math.PI*2); ctx.stroke();
     ctx.strokeStyle = "rgba(26,29,36,0.25)";
     ctx.beginPath(); ctx.arc(p[0], p[1], 22, 0, Math.PI*2); ctx.stroke();
     ctx.restore();
   }
 
-  // At globe level skip labels for non-selected/hovered aircraft (big perf win)
-  if (state.level === 0 && !selected && !hovered) return;
+  if (highlighted) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], 11, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (!showLabel && !showTelemetry) return;
 
   const label = a.callsign;
   ctx.save();
@@ -1871,7 +1882,7 @@ function drawAircraft(a) {
   const h = showTelemetry ? 36 : 14;
   ctx.fillStyle = "rgba(255,255,255,0.92)";
   ctx.fillRect(labelX - 2, labelY - 1, tw + 6, h);
-  ctx.strokeStyle = aircraftColor(a); ctx.lineWidth = 0.8;
+  ctx.strokeStyle = color; ctx.lineWidth = 0.8;
   ctx.strokeRect(labelX - 2, labelY - 1, tw + 6, h);
   ctx.fillStyle = "#1a1d24";
   ctx.fillText(label, labelX + 1, labelY + 1);
@@ -1934,7 +1945,7 @@ function draw() {
 
   // Aircraft
   const visible = getVisibleAircraft();
-  for (const a of visible) drawAircraft(a);
+  drawTraffic(visible);
 
 }
 
@@ -1945,7 +1956,7 @@ function _updateStats() {
   document.getElementById('statTracked').textContent = visible.length;
   document.getElementById('statAirborne').textContent = visible.filter(a => !a.onGround && a.status !== "ground").length;
   document.getElementById('statGround').textContent = visible.filter(a => a.onGround || a.status === "ground").length;
-  document.getElementById('statAlerts').textContent = conflictSet.size;
+  document.getElementById('statAlerts').textContent = activeConflicts.length;
   const sel = getVisibleAircraft().find(a => a.id === state.selectedAircraftId);
   document.getElementById('selectedLabel').textContent = sel ? sel.callsign : "—";
 }
@@ -2232,9 +2243,7 @@ function init() {
 // ===== JAVA BRIDGE INTEGRATION =====
 const feedAircraft = new Map();
 let feedSource = null;
-let feedMode = null;
-const conflictTimers = new Map();
-const conflictSet = new Set();   // active conflicts: "CS1|CS2"
+let activeConflicts = [];
 const resolvedSet = new Map();   // recently resolved: "CS1|CS2" → timestamp
 
 // Resolution history — rolling last 10, each shown for 30 s
@@ -2308,13 +2317,13 @@ function flushAircraftSnapshot() {
     nextIds.add(d.id);
     const existing = feedAircraft.get(d.id);
     feedAircraft.set(d.id, {
-      id: existing ? existing.id : nextAcId++,
+      id: existing ? existing.id : nextAcId++, trackId: d.id,
       callsign: d.cs, type: feedSource === 'DEMO' ? d.type : 'Unknown',
       lon: d.lon, lat: d.lat,
       alt: Math.round(d.alt), spd: Math.round(d.spd), hdg: Math.round(d.hdg),
       status: d.alt > 10000 ? 'cruise' : d.alt > 3000 ? 'climb' : 'descent',
       route: feedSource === 'DEMO' ? 'Scripted demo' : 'OpenSky track',
-      squawk: '----', onGround: false, isLive: feedMode === 'LIVE'
+      squawk: '----', onGround: false
     });
   }
   for (const id of feedAircraft.keys()) {
@@ -2338,16 +2347,16 @@ function renderConflictPanel() {
   const now = Date.now();
   for (const [k, v] of resolvedSet) if (now - v.ts > 12000) resolvedSet.delete(k);
 
-  const hasActive = conflictSet.size > 0;
+  const hasActive = activeConflicts.length > 0;
   const hasResolved = resolvedSet.size > 0;
 
   if (!hasActive && !hasResolved) { section.style.display = 'none'; return; }
   section.style.display = '';
-  countEl.textContent = conflictSet.size;
+  countEl.textContent = activeConflicts.length;
 
-  const activeHtml = Array.from(conflictSet).map(key => {
-    const [cs1, cs2] = JSON.parse(key);
-    return `<div class="conflict-item"><div class="conflict-row"><span class="alert-tag">ALERT</span>${escapeHtml(cs1)} ↔ ${escapeHtml(cs2)}</div></div>`;
+  const activeHtml = activeConflicts.map(conflict => {
+    const timing = conflict.seconds === 0 ? 'Current proximity' : `CPA in ${conflict.seconds} s`;
+    return `<div class="conflict-item"><div class="conflict-row"><span class="alert-tag">${escapeHtml(conflict.severity)}</span>${escapeHtml(conflict.callsign1)} ↔ ${escapeHtml(conflict.callsign2)}</div><div class="resolution-detail">${timing} · ${conflict.distance.toFixed(1)} NM</div></div>`;
   }).join('');
 
   const resolvedHtml = Array.from(resolvedSet.entries()).map(([key, v]) => {
@@ -2363,24 +2372,17 @@ function renderConflictPanel() {
   list.innerHTML = activeHtml + resolvedHtml;
 }
 
-function markConflict(cs1, cs2) {
-  const key = JSON.stringify([cs1, cs2].sort());
-  resolvedSet.delete(key);
-  conflictSet.add(key);
+function setActiveConflicts(conflicts) {
+  activeConflicts = conflicts;
+  for (const conflict of conflicts) {
+    resolvedSet.delete(JSON.stringify([conflict.callsign1, conflict.callsign2].sort()));
+  }
   renderConflictPanel();
-  clearTimeout(conflictTimers.get(key));
-  conflictTimers.set(key, setTimeout(() => {
-    conflictTimers.delete(key);
-    conflictSet.delete(key);
-    renderConflictPanel();
-  }, 15000));
+  _needsRedraw = true;
 }
 
 function markResolved(cs1, cs2, movedCs, newAlt, actionText = '') {
   const key = JSON.stringify([cs1, cs2].sort());
-  clearTimeout(conflictTimers.get(key));
-  conflictTimers.delete(key);
-  conflictSet.delete(key);
   const ts = Date.now();
   resolvedSet.set(key, { ts, movedCs: movedCs || '', newAlt: newAlt || 0, actionText });
 
@@ -2403,9 +2405,7 @@ function logATCEvent(message) {
 function resetTrafficDisplay() {
   feedAircraft.clear();
   pendingAircraft = null;
-  for (const timer of conflictTimers.values()) clearTimeout(timer);
-  conflictTimers.clear();
-  conflictSet.clear();
+  activeConflicts = [];
   resolvedSet.clear();
   resolutionHistory.length = 0;
   state.selectedAircraftId = null;
@@ -2423,7 +2423,6 @@ function setDataStatus(status) {
   const mode = status.split(' ')[0];
   if (mode === 'CONNECTING') {
     feedSource = null;
-    feedMode = null;
     resetTrafficDisplay();
     document.getElementById('feedLabel').textContent = 'Feed tracks';
   } else if (mode === 'LIVE' || mode === 'STALE' || mode === 'DEMO') {
@@ -2432,7 +2431,6 @@ function setDataStatus(status) {
       resetTrafficDisplay();
     }
     feedSource = source;
-    feedMode = mode;
     document.getElementById('feedLabel').textContent =
       mode === 'DEMO' ? 'Demo tracks' : mode === 'STALE' ? 'Cached tracks' : 'OpenSky tracks';
     _needsRedraw = true;
@@ -2450,74 +2448,52 @@ getVisibleAircraft = function() {
   return _cachedVisible;
 };
 
-function _isInConflict(callsign) {
-  for (const key of conflictSet)
-    if (JSON.parse(key).includes(callsign)) return true;
-  return false;
+function drawTraffic(aircraft) {
+  const onscreen = new Map();
+  for (const track of aircraft) {
+    const point = project(track.lon, track.lat);
+    if (point && point[0] >= 0 && point[0] <= state.width
+        && point[1] >= 0 && point[1] <= state.height
+        && (state.level !== 0 || point[2] >= 0.1)) {
+      onscreen.set(track.trackId, {track, point});
+    }
+  }
+
+  const dense = onscreen.size > 30;
+  const pairs = activeConflicts.filter(pair => onscreen.has(pair.id1) && onscreen.has(pair.id2));
+  const selected = [...onscreen.values()].find(({track}) => track.id === state.selectedAircraftId)?.track.trackId;
+  const selectedPairs = pairs.filter(pair => pair.id1 === selected || pair.id2 === selected);
+  const highlightedPairs = [...new Set([...selectedPairs.slice(0, 1), ...pairs])].slice(0, 3);
+  const highlighted = new Set(highlightedPairs.flatMap(pair => [pair.id1, pair.id2]));
+
+  if (highlightedPairs.length) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(200,48,44,0.55)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    for (const pair of highlightedPairs) {
+      const [x1, y1] = onscreen.get(pair.id1).point;
+      const [x2, y2] = onscreen.get(pair.id2).point;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  for (const {track} of onscreen.values()) {
+    if (highlighted.has(track.trackId) || track.id === state.selectedAircraftId
+        || track.id === state.hoverAircraftId) continue;
+    drawAircraft(track, !dense && state.level !== 0);
+  }
+  for (const {track} of onscreen.values()) {
+    const urgent = highlighted.has(track.trackId);
+    if (urgent || track.id === state.selectedAircraftId || track.id === state.hoverAircraftId) {
+      drawAircraft(track, true, urgent);
+    }
+  }
 }
-
-const _baseDrawAircraft = drawAircraft;
-drawAircraft = function(a) {
-  const inConflict = _isInConflict(a.callsign);
-
-  // Temporarily override status to 'emergency' so body draws red
-  if (inConflict && a.status !== 'emergency') {
-    const saved = a.status;
-    a.status = 'emergency';
-    _baseDrawAircraft(a);
-    a.status = saved;
-  } else {
-    _baseDrawAircraft(a);
-  }
-
-  // Compute projection once for overlay rings
-  const p = project(a.lon, a.lat);
-  if (!p) return;
-  if (state.level === 0 && p[2] !== undefined && p[2] < 0.1) return;
-
-  if (a.isLive) {
-    ctx.save();
-    ctx.strokeStyle = '#00e5ff';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([3, 2]);
-    ctx.beginPath(); ctx.arc(p[0], p[1], 11, 0, Math.PI * 2); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  if (inConflict) {
-    ctx.save();
-    ctx.strokeStyle = '#ff1744';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(p[0], p[1], 15, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
-  }
-};
-
-const _baseDraw = draw;
-draw = function() {
-  _baseDraw();
-  if (conflictSet.size === 0) return;
-  const allAc = getVisibleAircraft();
-  const byCS = new Map(allAc.map(a => [a.callsign, a]));
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255,23,68,0.5)';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([6, 4]);
-  for (const key of conflictSet) {
-    const [cs1, cs2] = JSON.parse(key);
-    const a1 = byCS.get(cs1), a2 = byCS.get(cs2);
-    if (!a1 || !a2) continue;
-    const p1 = project(a1.lon, a1.lat), p2 = project(a2.lon, a2.lat);
-    if (!p1 || !p2) continue;
-    ctx.beginPath();
-    ctx.moveTo(p1[0], p1[1]);
-    ctx.lineTo(p2[0], p2[1]);
-    ctx.stroke();
-  }
-  ctx.setLineDash([]);
-  ctx.restore();
-};
 // ===== END JAVA BRIDGE INTEGRATION =====
 init();
 </script>
