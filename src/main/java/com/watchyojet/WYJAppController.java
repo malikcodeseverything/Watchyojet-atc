@@ -122,12 +122,12 @@ public class WYJAppController {
     }
 
     public void updateAllAircraft(List<Aircraft> aircrafts) {
-        if (aircrafts.isEmpty()) return;
         final String aircraftJson;
         try {
             aircraftJson = JSON.writeValueAsString(aircrafts.stream().map(a -> Map.of(
                     "id", a.getId(), "cs", a.getCallsign(), "lat", a.getLat(), "lon", a.getLon(),
-                    "alt", a.getAltitude(), "spd", a.getSpeed(), "hdg", a.getHeading()
+                    "alt", a.getAltitude(), "spd", a.getSpeed(), "hdg", a.getHeading(),
+                    "type", a.getType().name()
             )).toList());
         } catch (JsonProcessingException e) {
             log("Unable to encode aircraft update: " + e.getMessage());

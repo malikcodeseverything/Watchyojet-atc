@@ -579,8 +579,8 @@
         <div class="value" id="statAlerts">0</div>
       </div>
       <div class="stat-card accent">
-        <div class="label">Live API</div>
-        <div class="value" id="liveCount">0</div>
+        <div class="label" id="feedLabel">Feed tracks</div>
+        <div class="value" id="feedCount">0</div>
       </div>
     </div>
     <div class="hint" id="viewHint">Click a country on the globe to drill down.</div>
@@ -1055,100 +1055,6 @@ function seedEnrouteAircraft() {
   return out;
 }
 
-function seedGroundAircraft(airport) {
-  const out = [];
-  const [alon, alat] = airport.pos;
-
-  // PHL-specific seeding: aircraft aligned to real runway positions/headings
-  if (airport.icao === 'KPHL') {
-    const slots = [
-      // Landing on 27R (south runway, approach from east, heading 267°)
-      { lon: alon+0.030, lat: alat-0.006, hdg: 267, status:"descent", spd:145, role:"landing",  gate:"A" },
-      // Landing on 27L (north runway, heading 267°)
-      { lon: alon+0.026, lat: alat+0.005, hdg: 267, status:"descent", spd:138, role:"landing",  gate:"B" },
-      // Landing on 35  (crosswind, heading 350°)
-      { lon: alon-0.021, lat: alat+0.016, hdg: 350, status:"descent", spd:120, role:"landing",  gate:"F" },
-      // Holding for takeoff on 09L (west end south runway)
-      { lon: alon-0.022, lat: alat-0.006, hdg:  87, status:"ground",  spd:  0, role:"holding",  gate:"C" },
-      // Takeoff roll 09R
-      { lon: alon-0.014, lat: alat+0.005, hdg:  87, status:"climb",   spd:155, role:"takeoff",  gate:"D" },
-      // Taxi heading east on taxiway A
-      { lon: alon-0.010, lat: alat-0.0005,hdg:  87, status:"ground",  spd: 22, role:"taxi",     gate:"C" },
-      // Taxi heading west on taxiway B
-      { lon: alon+0.006, lat: alat+0.003, hdg: 267, status:"ground",  spd: 18, role:"taxi",     gate:"A" },
-      // Taxi heading south (cross-taxiway)
-      { lon: alon+0.002, lat: alat+0.003, hdg: 180, status:"ground",  spd: 14, role:"taxi",     gate:"B" },
-      // Taxi heading north
-      { lon: alon-0.004, lat: alat-0.003, hdg:   0, status:"ground",  spd: 12, role:"taxi",     gate:"D" },
-      // Pushback from Terminal B gate
-      { lon: alon+0.005, lat: alat+0.002, hdg: 200, status:"ground",  spd:  5, role:"pushback", gate:"B" },
-      // Pushback from Terminal D gate
-      { lon: alon-0.007, lat: alat+0.002, hdg: 180, status:"ground",  spd:  4, role:"pushback", gate:"D" },
-      // Parked at Terminal A
-      { lon: alon+0.009, lat: alat+0.006, hdg: 267, status:"ground",  spd:  0, role:"holding",  gate:"A" },
-      // Emergency vehicle patrolling
-      { lon: alon-0.005, lat: alat-0.002, hdg:  45, status:"emergency",spd: 35, role:"emrgveh", gate:"" },
-    ];
-    slots.forEach(s => {
-      const isEV = s.role === 'emrgveh';
-      out.push({
-        id: nextAcId++,
-        callsign: isEV ? "RESCUE" + Math.floor(1+Math.random()*9) : randCS(),
-        type: isEV ? "FIRE" : AC_TYPES[Math.floor(Math.random()*AC_TYPES.length)],
-        lon: s.lon + (Math.random()-0.5)*0.001,
-        lat: s.lat + (Math.random()-0.5)*0.001,
-        alt: 0,
-        spd: s.spd,
-        hdg: s.hdg,
-        status: s.status,
-        route: isEV ? "AIRPORT PATROL" : `GATE ${s.gate}${Math.floor(1+Math.random()*20)} → RWY`,
-        squawk: isEV ? "----" : String(Math.floor(1000 + Math.random()*6000)),
-        groundRole: s.role,
-        onGround: true,
-      });
-    });
-    return out;
-  }
-
-  // Generic seeding for all other airports
-  const roles = [
-    { role: "takeoff",  status: "climb",  spd: () => 120 + Math.random()*50 },
-    { role: "takeoff",  status: "climb",  spd: () => 140 + Math.random()*40 },
-    { role: "landing",  status: "descent", spd: () => 130 + Math.random()*30 },
-    { role: "landing",  status: "descent", spd: () => 120 + Math.random()*30 },
-    { role: "taxi",     status: "ground", spd: () => 8 + Math.random()*15 },
-    { role: "taxi",     status: "ground", spd: () => 5 + Math.random()*12 },
-    { role: "taxi",     status: "ground", spd: () => 10 + Math.random()*10 },
-    { role: "taxi",     status: "ground", spd: () => 12 + Math.random()*10 },
-    { role: "holding",  status: "ground", spd: () => 0 },
-    { role: "holding",  status: "ground", spd: () => 0 },
-    { role: "pushback", status: "ground", spd: () => 3 + Math.random()*4 },
-    { role: "pushback", status: "ground", spd: () => 3 + Math.random()*4 },
-    { role: "emrgveh",  status: "emergency", spd: () => 20 + Math.random()*20 },
-  ];
-  for (let i = 0; i < roles.length; i++) {
-    const r = roles[i];
-    const rad = 0.008 + Math.random() * 0.025;
-    const ang = Math.random() * Math.PI * 2;
-    out.push({
-      id: nextAcId++,
-      callsign: r.role === "emrgveh" ? "RESCUE" + Math.floor(1+Math.random()*9) : randCS(),
-      type: r.role === "emrgveh" ? "FIRE" : AC_TYPES[Math.floor(Math.random()*AC_TYPES.length)],
-      lon: alon + Math.cos(ang)*rad,
-      lat: alat + Math.sin(ang)*rad * 0.75,
-      alt: 0,
-      spd: Math.round(r.spd()),
-      hdg: Math.floor(Math.random()*360),
-      status: r.status,
-      route: r.role === "emrgveh" ? "AIRPORT PATROL" : `GATE ${String.fromCharCode(65+Math.floor(Math.random()*6))}${Math.floor(1+Math.random()*20)} → RWY`,
-      squawk: r.role === "emrgveh" ? "----" : String(Math.floor(1000 + Math.random()*6000)),
-      groundRole: r.role,
-      onGround: true,
-    });
-  }
-  return out;
-}
-
 // ---------- PROJECTIONS ----------
 function lonLatToScreenFlat(lon, lat) {
   const { cx, cy, scale } = state.view;
@@ -1415,7 +1321,7 @@ function selectARTCC(s) {
 }
 function selectAirport(a) {
   state.selectedAirport = a;
-  state.aircraft = seedGroundAircraft(a);
+  state.aircraft = globalAircraft;
   goToLevel(4);
 }
 function selectAircraft(id) {
@@ -2017,7 +1923,7 @@ function _updateStats() {
   document.getElementById('statAirborne').textContent = visible.filter(a => !a.onGround && a.status !== "ground").length;
   document.getElementById('statGround').textContent = visible.filter(a => a.onGround || a.status === "ground").length;
   document.getElementById('statAlerts').textContent = visible.filter(a => a.status === "emergency").length;
-  const sel = state.aircraft.find(a => a.id === state.selectedAircraftId);
+  const sel = getVisibleAircraft().find(a => a.id === state.selectedAircraftId);
   document.getElementById('selectedLabel').textContent = sel ? sel.callsign : "—";
 }
 
@@ -2168,7 +2074,7 @@ function escapeHtml(value) {
 
 function renderAircraftDetail() {
   const el = document.getElementById('aircraftDetail');
-  const a = state.aircraft.find(x => x.id === state.selectedAircraftId);
+  const a = getVisibleAircraft().find(x => x.id === state.selectedAircraftId);
   if (!a) {
     el.innerHTML = `<div class="empty-state">No aircraft selected<br><span style="font-size:11px">Click any aircraft on the map</span></div>`;
     renderNearbyList();
@@ -2181,8 +2087,8 @@ function renderAircraftDetail() {
       <span class="status-badge ${a.status}">● ${a.status.toUpperCase()}${a.groundRole?' · '+a.groundRole.toUpperCase():''}</span>
       <div class="telemetry-grid">
         <div class="telem"><div class="label">Altitude</div><div class="value">${a.alt.toLocaleString()}<span class="unit">ft</span></div></div>
-        <div class="telem"><div class="label">Speed</div><div class="value">${a.spd}<span class="unit">kt</span></div></div>
-        <div class="telem"><div class="label">Heading</div><div class="value">${String(a.hdg).padStart(3,'0')}<span class="unit">°</span></div></div>
+        <div class="telem"><div class="label">Ground speed</div><div class="value">${a.spd}<span class="unit">kt</span></div></div>
+        <div class="telem"><div class="label">Track</div><div class="value">${String(a.hdg).padStart(3,'0')}<span class="unit">°</span></div></div>
       </div>
       <div class="telemetry-grid" style="margin-top:8px;padding-top:8px;border-top:none">
         <div class="telem"><div class="label">Squawk</div><div class="value" style="font-size:16px">${a.squawk}</div></div>
@@ -2251,8 +2157,8 @@ let _needsRedraw = true;   // dirty flag: draw only when something changed
 let _cachedVisible = null; // per-frame cache for getVisibleAircraft()
 
 function _rafLoop(ts) {
-  // Apply buffered live data — returns true when data changed
-  if (_flushLiveBuffer()) _needsRedraw = true;
+  // Apply the latest aircraft snapshot — returns true when data changed
+  if (flushAircraftSnapshot()) _needsRedraw = true;
 
   // Simulation physics at 300ms cadence
   if (ts - _rafLastSim >= 300) {
@@ -2305,7 +2211,10 @@ init();
 
 
 // ===== JAVA BRIDGE INTEGRATION =====
-const liveAircraftMap = new Map();
+const feedAircraft = new Map();
+let feedSource = null;
+let feedMode = null;
+const conflictTimers = new Map();
 const conflictSet = new Set();   // active conflicts: "CS1|CS2"
 const resolvedSet = new Map();   // recently resolved: "CS1|CS2" → timestamp
 
@@ -2358,51 +2267,39 @@ function renderResolutionHistory() {
 setInterval(renderResolutionHistory, 2000);
 
 // Pending buffer — Java writes here; RAF applies it at the next frame boundary
-let _pendingLiveArr = null;
+let pendingAircraft = null;
 
 function batchUpdateAircraft(arr) {
-  // Just store; _flushLiveBuffer() will apply it at the start of the next frame
-  _pendingLiveArr = arr;
+  // Apply the newest snapshot at the next frame boundary.
+  pendingAircraft = arr;
 }
 
-function _flushLiveBuffer() {
-  if (_pendingLiveArr === null) return false;
-  const arr = _pendingLiveArr;
-  _pendingLiveArr = null;
+function flushAircraftSnapshot() {
+  if (pendingAircraft === null) return false;
+  const arr = pendingAircraft;
+  pendingAircraft = null;
 
-  const now = Date.now();
+  const nextIds = new Set();
   for (const d of arr) {
-    const status = d.alt > 10000 ? 'cruise' : d.alt > 3000 ? 'climb' : d.alt > 1000 ? 'descent' : 'ground';
-    const onGround = d.alt < 50;
-    const existing = liveAircraftMap.get(d.id);
-    if (existing) {
-      existing.callsign = d.cs;
-      existing.lat    = d.lat;
-      existing.lon    = d.lon;
-      existing.alt    = Math.round(d.alt);
-      existing.spd    = d.spd > 0 ? Math.round(d.spd) : existing.spd;
-      existing.hdg    = d.hdg >= 0 ? Math.round(d.hdg) : existing.hdg;
-      existing.status = status;
-      existing.onGround = onGround;
-      existing.lastSeen = now;
-    } else {
-      liveAircraftMap.set(d.id, {
-        id: nextAcId++, callsign: d.cs, type: 'B738',
-        lon: d.lon, lat: d.lat,
-        alt: Math.round(d.alt || 35000),
-        spd: Math.round(d.spd || 450),
-        hdg: Math.round(d.hdg >= 0 ? d.hdg : 0),
-        status, route: 'LIVE · OpenSky', squawk: '----',
-        onGround, isLive: true, lastSeen: now
-      });
-    }
+    nextIds.add(d.id);
+    const existing = feedAircraft.get(d.id);
+    feedAircraft.set(d.id, {
+      id: existing ? existing.id : nextAcId++,
+      callsign: d.cs, type: feedSource === 'DEMO' ? d.type : 'Unknown',
+      lon: d.lon, lat: d.lat,
+      alt: Math.round(d.alt), spd: Math.round(d.spd), hdg: Math.round(d.hdg),
+      status: d.alt > 10000 ? 'cruise' : d.alt > 3000 ? 'climb' : 'descent',
+      route: feedSource === 'DEMO' ? 'Scripted demo' : 'OpenSky track',
+      squawk: '----', onGround: false, isLive: feedMode === 'LIVE'
+    });
   }
-  // Evict aircraft not seen in 30s
-  for (const cs of [...liveAircraftMap.keys()])
-    if (now - liveAircraftMap.get(cs).lastSeen > 30000) liveAircraftMap.delete(cs);
+  for (const id of feedAircraft.keys()) {
+    if (!nextIds.has(id)) feedAircraft.delete(id);
+  }
 
-  const liveEl = document.getElementById('liveCount');
-  if (liveEl) liveEl.textContent = liveAircraftMap.size;
+  document.getElementById('feedCount').textContent = feedAircraft.size;
+  _cachedVisible = null;
+  if (state.selectedAircraftId !== null) renderAircraftDetail();
   return true;
 }
 
@@ -2446,11 +2343,18 @@ function markConflict(cs1, cs2) {
   resolvedSet.delete(key);
   conflictSet.add(key);
   renderConflictPanel();
-  setTimeout(() => { conflictSet.delete(key); renderConflictPanel(); }, 15000);
+  clearTimeout(conflictTimers.get(key));
+  conflictTimers.set(key, setTimeout(() => {
+    conflictTimers.delete(key);
+    conflictSet.delete(key);
+    renderConflictPanel();
+  }, 15000));
 }
 
 function markResolved(cs1, cs2, movedCs, newAlt, actionText = '') {
   const key = JSON.stringify([cs1, cs2].sort());
+  clearTimeout(conflictTimers.get(key));
+  conflictTimers.delete(key);
   conflictSet.delete(key);
   const ts = Date.now();
   resolvedSet.set(key, { ts, movedCs: movedCs || '', newAlt: newAlt || 0, actionText });
@@ -2479,6 +2383,31 @@ function setDataStatus(status) {
     el.style.cssText = 'position:fixed;top:12px;right:16px;background:rgba(20,20,40,.92);color:#fff;font-family:monospace;font-size:11px;padding:7px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.25);z-index:9999';
     document.body.appendChild(el);
   }
+  const mode = status.split(' ')[0];
+  if (mode === 'LIVE' || mode === 'STALE' || mode === 'DEMO') {
+    const source = mode === 'DEMO' ? 'DEMO' : 'OPENSKY';
+    if (source !== feedSource) {
+      feedAircraft.clear();
+      pendingAircraft = null;
+      for (const timer of conflictTimers.values()) clearTimeout(timer);
+      conflictTimers.clear();
+      conflictSet.clear();
+      resolvedSet.clear();
+      resolutionHistory.length = 0;
+      state.selectedAircraftId = null;
+      state.hoverAircraftId = null;
+      _cachedVisible = null;
+      document.getElementById('feedCount').textContent = '0';
+      renderConflictPanel();
+      renderResolutionHistory();
+      renderAircraftDetail();
+    }
+    feedSource = source;
+    feedMode = mode;
+    document.getElementById('feedLabel').textContent =
+      mode === 'DEMO' ? 'Demo tracks' : mode === 'STALE' ? 'Cached tracks' : 'OpenSky tracks';
+    _needsRedraw = true;
+  }
   el.textContent = status;
   el.style.borderColor = status.startsWith('LIVE') ? '#42d392' : status.startsWith('STALE') ? '#f6c85f' : '#ef6b73';
 }
@@ -2487,9 +2416,7 @@ const _baseGetVisible = getVisibleAircraft;
 getVisibleAircraft = function() {
   if (_cachedVisible !== null) return _cachedVisible;
   const sim = _baseGetVisible();
-  const live = Array.from(liveAircraftMap.values());
-  const liveCallsigns = new Set(live.map(a => a.callsign));
-  _cachedVisible = [...sim.filter(a => !liveCallsigns.has(a.callsign)), ...live];
+  _cachedVisible = [...sim, ...feedAircraft.values()];
   return _cachedVisible;
 };
 
