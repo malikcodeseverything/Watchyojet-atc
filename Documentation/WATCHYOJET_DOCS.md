@@ -35,19 +35,27 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
    within the lookahead, so a climbing or descending aircraft is flagged
    only if it reaches the other aircraft's level while they are laterally
    close. `SeparationStandards` sets the thresholds: 3 NM when both
-   aircraft are below FL180 and within 40 NM of PHL, 5 NM otherwise, with
+   aircraft are below FL180 and within 40 NM of an approach-control airport
+   covered by the query box (PHL, EWR, ACY, ABE or BWI), 5 NM otherwise, with
    a 2 minute lookahead in that terminal area and 5 minutes elsewhere. The
    lookaheads are this project's choices: straight-line predictions age
    quickly in terminal airspace, where aircraft turn and change level often.
    Pairs involving a VFR aircraft (transponder code 1200) or a helicopter
    (ADS-B emitter category 8) are counted as traffic advisories and are not
-   resolved, since ATC gives VFR traffic information rather than separation
-   outside Class B airspace, and helicopters around Philadelphia (police,
+   resolved. OpenSky does not report flight rules, so a US-registered
+   aircraft using its registration as callsign, slower than 150 kt and below
+   10,000 ft, is estimated to be VFR as well: many such pilots use flight
+   following and squawk a discrete code while still receiving traffic
+   information rather than separation. The estimate can misclassify a slow
+   IFR private flight. These pairs are not resolved, since ATC gives VFR
+   traffic information rather than separation outside Class B airspace, and helicopters around Philadelphia (police,
    news, medical) mostly fly VFR at low level. An aircraft
    squawking 7500, 7600 or 7700 is treated as an emergency and is never the
    one asked to maneuver. Pairs with both aircraft inside tower airspace
    (within 5 NM of PHL, PNE, TTN or ILG and below 2,500 ft) are counted
-   but not alerted: near the runways the tower separates traffic visually
+   but not alerted, as are pairs in which either aircraft is below 1,000 ft
+   or slower than 40 kt (departing, landing, taxiing or hovering): near the
+   runways the tower separates traffic visually
    and parallel approaches legally run much closer than radar minima, so
    terminal radar systems inhibit conflict alerts there too. Once an alert
    is active, it is held until the pair

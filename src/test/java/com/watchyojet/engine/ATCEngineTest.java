@@ -224,6 +224,42 @@ class ATCEngineTest {
     }
 
     @Test
+    void leavesLowOrSlowTracksToTheTower() {
+        // Departure and arrival 60 NM from PHL, 1 NM apart; one is still below 1,000 ft.
+        Aircraft departing = new Aircraft("UAL1777", 40.70, -74.20, 800, 180, 0, AircraftType.B737);
+        Aircraft arriving = new Aircraft("UAL1847", 40.7167, -74.20, 1_200, 150, 180, AircraftType.B737);
+
+        CycleReport report = new ATCEngine().runCycle(List.of(departing, arriving), CycleMode.ADVISE);
+
+        assertTrue(report.active().isEmpty());
+        assertEquals(1, report.counters().towerSuppressed());
+    }
+
+    @Test
+    void appliesTerminalMinimaAroundNewarkToo() {
+        // Parallel airliners 4 NM apart at 6,000 ft near Newark: legal under the 3 NM terminal rule.
+        Aircraft a = new Aircraft("UAL1", 40.60, -74.30, 6_000, 220, 0, AircraftType.B737);
+        Aircraft b = new Aircraft("UAL2", 40.60, -74.2132, 6_000, 220, 0, AircraftType.B737);
+
+        assertTrue(SeparationStandards.inTerminalArea(a));
+        assertTrue(new ATCEngine().runCycle(List.of(a, b), CycleMode.ADVISE).active().isEmpty());
+    }
+
+    @Test
+    void treatsSlowUsRegisteredLowLevelTrafficAsLikelyVfr() {
+        Aircraft cessna = new Aircraft("N784LA", 39.90, -75.70, 2_500, 116, 90, AircraftType.C172);
+        Aircraft piper = new Aircraft("N869FG", 39.90, -75.60, 2_600, 75, 270, AircraftType.C172);
+        cessna.setSquawk("3735");
+
+        CycleReport report = new ATCEngine().runCycle(List.of(cessna, piper), CycleMode.ADVISE);
+
+        assertTrue(report.active().isEmpty());
+        assertEquals(1, report.counters().trafficAdvisories());
+        assertFalse(SeparationStandards.likelyVfr(
+                new Aircraft("DAL123", 39.9, -75.6, 2_500, 120, 90, AircraftType.B737)));
+    }
+
+    @Test
     void leavesPairsInsideTowerAirspaceToTheTower() {
         // Parallel arrivals 1 NM apart, 3 NM west of PHL.
         Aircraft left = new Aircraft("LEFT", 39.8719, -75.30, 1_500, 140, 90, AircraftType.B737);

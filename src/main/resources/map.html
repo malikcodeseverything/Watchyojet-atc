@@ -2416,8 +2416,8 @@ function renderCycleStats() {
   if (trafficMode === 'ADVISE') {
     el.textContent = `Advisory only · ${c.alerts} alerts · ${c.pairsClearedInTrial} clear in simulation · ` +
       `${c.rejectedGroups} rejected · ${c.noSafeManeuver} without a safe maneuver · ` +
-      `${c.separationLost} already lost · ${c.trafficAdvisories} VFR or helicopter traffic · ` +
-      `${c.towerSuppressed} in tower airspace`;
+      `${c.separationLost} already lost · ${c.trafficAdvisories} VFR, likely VFR or helicopter traffic · ` +
+      `${c.towerSuppressed} low-level or in tower airspace`;
   } else if (trafficMode === 'SIMULATE') {
     el.textContent = `Simulation · maneuvers applied to scripted tracks · ${c.alerts} alerts`;
   } else {

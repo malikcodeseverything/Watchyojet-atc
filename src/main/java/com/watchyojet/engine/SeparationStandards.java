@@ -17,7 +17,21 @@ public final class SeparationStandards {
     public static final double PHL_LAT = 39.8719;
     public static final double PHL_LON = -75.2411;
 
-    /** Terminal minima apply within this distance of PHL. */
+    /**
+     * Airports with their own approach control inside or next to the OpenSky query box. The box
+     * reaches 40.9 N, so it includes the Newark area as well as Philadelphia.
+     */
+    public record TerminalHub(String airport, double lat, double lon) {
+    }
+
+    public static final List<TerminalHub> TERMINAL_HUBS = List.of(
+            new TerminalHub("PHL", PHL_LAT, PHL_LON),
+            new TerminalHub("EWR", 40.6925, -74.1687),
+            new TerminalHub("ACY", 39.4576, -74.5772),
+            new TerminalHub("ABE", 40.6521, -75.4408),
+            new TerminalHub("BWI", 39.1754, -76.6683));
+
+    /** Terminal minima apply within this distance of a terminal hub. */
     public static final double TERMINAL_RADIUS_NM = 40;
     /** Terminal minima apply below this altitude. */
     public static final double TERMINAL_CEILING_FT = 18_000;
@@ -65,13 +79,49 @@ public final class SeparationStandards {
     }
 
     /** Radar alerts are suppressed only when both aircraft are inside tower airspace. */
+    /**
+     * Radar alerts are suppressed when both aircraft are inside tower airspace, or when either is
+     * low or slow enough to be departing, landing, taxiing or hovering.
+     */
     public static boolean towerPair(Aircraft a, Aircraft b) {
-        return inTowerZone(a) && inTowerZone(b);
+        return (inTowerZone(a) && inTowerZone(b)) || lowOrSlow(a) || lowOrSlow(b);
     }
 
     public static boolean inTerminalArea(Aircraft aircraft) {
-        return aircraft.getAltitude() < TERMINAL_CEILING_FT
-                && distanceNm(aircraft.getLat(), aircraft.getLon(), PHL_LAT, PHL_LON) <= TERMINAL_RADIUS_NM;
+        if (aircraft.getAltitude() >= TERMINAL_CEILING_FT) return false;
+        for (TerminalHub hub : TERMINAL_HUBS) {
+            if (distanceNm(aircraft.getLat(), aircraft.getLon(), hub.lat(), hub.lon())
+                    <= TERMINAL_RADIUS_NM) return true;
+        }
+        return false;
+    }
+
+    /** Below this height an aircraft is taking off, landing or hovering: the tower's traffic. */
+    public static final double LOW_LEVEL_FT = 1_000;
+    /** Slower than this, a track is taxiing, hovering or a balloon. */
+    public static final double SLOW_TRACK_KT = 40;
+
+    public static boolean lowOrSlow(Aircraft aircraft) {
+        return aircraft.getAltitude() < LOW_LEVEL_FT || aircraft.getSpeed() < SLOW_TRACK_KT;
+    }
+
+    private static final java.util.regex.Pattern US_REGISTRATION =
+            java.util.regex.Pattern.compile("N[1-9][0-9A-Z]{0,4}");
+    public static final double LIKELY_VFR_MAX_SPEED_KT = 150;
+    public static final double LIKELY_VFR_MAX_ALTITUDE_FT = 10_000;
+
+    /**
+     * An estimate, because OpenSky does not report flight rules. A US-registered aircraft flying
+     * under its registration (not an airline callsign), slower than 150 kt and below 10,000 ft
+     * is most likely a VFR private flight. Many such pilots use flight following, so they squawk
+     * a discrete code instead of 1200 while still receiving traffic information rather than
+     * separation. This can misclassify a slow IFR private flight.
+     */
+    public static boolean likelyVfr(Aircraft aircraft) {
+        return !aircraft.isSquawkingEmergency()
+                && US_REGISTRATION.matcher(aircraft.getCallsign()).matches()
+                && aircraft.getSpeed() < LIKELY_VFR_MAX_SPEED_KT
+                && aircraft.getAltitude() < LIKELY_VFR_MAX_ALTITUDE_FT;
     }
 
     /** Terminal minima apply only when both aircraft are in the terminal area. */

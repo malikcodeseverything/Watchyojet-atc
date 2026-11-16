@@ -331,7 +331,7 @@ public class ATCEngine {
     }
 
     private static boolean isTrafficOnly(Aircraft aircraft) {
-        return aircraft.isVfr() || aircraft.isRotorcraft();
+        return aircraft.isVfr() || aircraft.isRotorcraft() || SeparationStandards.likelyVfr(aircraft);
     }
 
     private static boolean isTowerPair(Conflict conflict) {
