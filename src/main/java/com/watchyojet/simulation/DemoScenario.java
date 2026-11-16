@@ -8,11 +8,7 @@ import com.watchyojet.model.AircraftType;
 
 public class DemoScenario {
 
-    // Pair A — head-on convergence, altDiff 500 ft → CRITICAL → altitude resolution
-    // Pair B — crossing paths, altDiff 500 ft → HIGH → altitude resolution
-    // Pair C — altDiff exactly 1499 ft → SAFE_VERTICAL_SEPARATION gate bails → heading resolution
-    // BKGD    — realistic background traffic, no conflicts
-
+    // Three converging pairs at distinct altitude bands, plus four background tracks.
     public static List<Aircraft> build() {
         return Arrays.asList(
             new Aircraft("DEMO01", 40.00, -75.30, 22000, 300, 180, AircraftType.B737),
@@ -22,7 +18,7 @@ public class DemoScenario {
             new Aircraft("DEMO04", 40.05, -75.30, 27500, 320, 270, AircraftType.A320),
 
             new Aircraft("DEMO05", 39.58, -75.55, 12000, 280,  90, AircraftType.B737),
-            new Aircraft("DEMO06", 39.50, -75.15, 13499, 280, 270, AircraftType.B737),
+            new Aircraft("DEMO06", 39.50, -75.15, 12500, 280, 270, AircraftType.B737),
 
             new Aircraft("BKGD01", 40.50, -74.90, 35000, 260, 220, AircraftType.A350),
             new Aircraft("BKGD02", 39.20, -76.10, 32000, 280,  50, AircraftType.A320),
