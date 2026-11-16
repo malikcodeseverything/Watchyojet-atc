@@ -30,6 +30,11 @@ public record CycleReport(CycleMode mode, List<ActiveAlert> active, List<Cleared
         SEPARATION_LOST,
         /** No longer inside the minima, but still within the hold margin, so the alert stays up. */
         CLEARING,
+        /**
+         * One of the aircraft is coasting on an old report, so separation cannot be confirmed yet.
+         * The alert stays up until a fresh report arrives or the track is dropped.
+         */
+        AWAITING_REPORT,
         /** Both aircraft were maneuvered recently and are left alone until the cooldown ends. */
         MANEUVER_IN_PROGRESS,
         /** Maneuvers are not evaluated in this mode. */
@@ -46,33 +51,49 @@ public record CycleReport(CycleMode mode, List<ActiveAlert> active, List<Cleared
                               Advice advice, String instruction) {
     }
 
+    /** How an alert ended. */
+    public enum Outcome {
+        /** The observed tracks no longer conflict. */
+        SEPARATED,
+        /** An accepted maneuver separated the pair in simulation. */
+        RESOLVED,
+        /**
+         * One of the aircraft dropped out of the feed after coasting, so separation could not be
+         * confirmed. Not a clearance.
+         */
+        TRACK_LOST
+    }
+
     /**
      * A pair that was flagged and no longer is.
      *
-     * @param instruction the maneuver that cleared it in simulation, or empty when the observed
-     *                    tracks separated on their own
+     * @param instruction the maneuver that cleared it in simulation, or empty otherwise
      */
     public record ClearedAlert(String pairKey, String id1, String id2, String callsign1,
-                               String callsign2, String instruction) {
+                               String callsign2, Outcome outcome, String instruction) {
 
         public boolean clearedByManeuver() {
-            return !instruction.isEmpty();
+            return outcome == Outcome.RESOLVED;
         }
     }
 
     /**
      * Per-cycle numbers, so it is visible whether resolution is working at all.
      *
-     * @param trafficAdvisories predicted proximity involving a VFR aircraft (squawk 1200) or a
-     *                          helicopter (emitter category 8). These
-     *                          get traffic information, not separation, so they are counted but
-     *                          not resolved.
+     * @param clearedAlerts     alerts that ended because the pair separated or was resolved
+     * @param clearing          alerts held up: separating but still within the hold margin, or
+     *                          waiting for a fresh report on a coasting track
+     * @param tracksLost        alerts that ended because one of the tracks dropped out of the feed
+     * @param trafficAdvisories predicted proximity involving VFR, helicopter, likely VFR, or low
+     *                          or slow traffic. These get traffic information, not separation, so
+     *                          they are counted but not resolved.
      * @param towerSuppressed   predicted proximity with both aircraft inside tower airspace near
      *                          an airport, where radar alerts are suppressed.
      */
     public record Counters(int alerts, int newAlerts, int clearedAlerts, int groups,
                            int proposals, int acceptedGroups, int rejectedGroups,
                            int pairsClearedInTrial, int noSafeManeuver, int separationLost,
-                           int clearing, int trafficAdvisories, int towerSuppressed) {
+                           int clearing, int tracksLost, int trafficAdvisories,
+                           int towerSuppressed) {
     }
 }

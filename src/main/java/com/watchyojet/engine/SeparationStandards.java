@@ -57,11 +57,23 @@ public final class SeparationStandards {
     public record TowerZone(String airport, double lat, double lon) {
     }
 
+    /** Towered airports inside the OpenSky query box (40.9 N to 38.8 N, 76.5 W to 74.0 W). */
     public static final List<TowerZone> TOWER_ZONES = List.of(
             new TowerZone("PHL", 39.8719, -75.2411),
             new TowerZone("PNE", 40.0819, -75.0106),
             new TowerZone("TTN", 40.2767, -74.8135),
-            new TowerZone("ILG", 39.6787, -75.6065));
+            new TowerZone("ILG", 39.6787, -75.6065),
+            new TowerZone("EWR", 40.6925, -74.1687),
+            new TowerZone("TEB", 40.8501, -74.0608),
+            new TowerZone("MMU", 40.7994, -74.4149),
+            new TowerZone("CDW", 40.8752, -74.2814),
+            new TowerZone("ACY", 39.4576, -74.5772),
+            new TowerZone("ABE", 40.6521, -75.4408),
+            new TowerZone("RDG", 40.3785, -75.9652),
+            new TowerZone("LNS", 40.1217, -76.2961),
+            new TowerZone("MTN", 39.3257, -76.4138),
+            new TowerZone("DOV", 39.1295, -75.4660),
+            new TowerZone("WRI", 40.0156, -74.5917));
 
     public static final double TOWER_ZONE_RADIUS_NM = 5;
     public static final double TOWER_ZONE_CEILING_FT = 2_500;
@@ -79,12 +91,24 @@ public final class SeparationStandards {
     }
 
     /** Radar alerts are suppressed only when both aircraft are inside tower airspace. */
-    /**
-     * Radar alerts are suppressed when both aircraft are inside tower airspace, or when either is
-     * low or slow enough to be departing, landing, taxiing or hovering.
-     */
     public static boolean towerPair(Aircraft a, Aircraft b) {
-        return (inTowerZone(a) && inTowerZone(b)) || lowOrSlow(a) || lowOrSlow(b);
+        return inTowerZone(a) && inTowerZone(b);
+    }
+
+    /**
+     * True for an aircraft that receives traffic information rather than separation: VFR
+     * (squawk 1200), a helicopter, a likely VFR private flight, or a track that is low or slow
+     * enough to be in a traffic pattern, landing or hovering. Low traffic outside tower airspace
+     * is mostly at airports without a tower, where IFR aircraft are handled one at a time by
+     * procedure rather than by radar separation. It is still counted and reported, never dropped.
+     */
+    public static boolean trafficOnly(Aircraft aircraft) {
+        return aircraft.isVfr() || aircraft.isRotorcraft() || likelyVfr(aircraft) || lowOrSlow(aircraft);
+    }
+
+    /** True when radar separation applies to the pair, so a predicted conflict is an alert. */
+    public static boolean separationApplies(Aircraft a, Aircraft b) {
+        return !towerPair(a, b) && !trafficOnly(a) && !trafficOnly(b);
     }
 
     public static boolean inTerminalArea(Aircraft aircraft) {
@@ -96,7 +120,7 @@ public final class SeparationStandards {
         return false;
     }
 
-    /** Below this height an aircraft is taking off, landing or hovering: the tower's traffic. */
+    /** Below this height an aircraft is taking off, landing, in a traffic pattern or hovering. */
     public static final double LOW_LEVEL_FT = 1_000;
     /** Slower than this, a track is taxiing, hovering or a balloon. */
     public static final double SLOW_TRACK_KT = 40;

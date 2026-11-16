@@ -188,6 +188,7 @@ public class WYJAppController implements CycleListener {
                 item.put("vr", a.getVerticalRate());
                 item.put("sq", a.getSquawk() == null ? "" : a.getSquawk());
                 item.put("type", a.getType().name());
+                item.put("coast", a.isCoasting());
                 return item;
             }).toList());
         } catch (JsonProcessingException e) {
@@ -240,6 +241,7 @@ public class WYJAppController implements CycleListener {
                 item.put("id2", alert.id2());
                 item.put("callsign1", alert.callsign1());
                 item.put("callsign2", alert.callsign2());
+                item.put("outcome", alert.outcome().name());
                 item.put("instruction", alert.instruction());
                 return item;
             }).toList());
@@ -256,6 +258,7 @@ public class WYJAppController implements CycleListener {
             counters.put("noSafeManeuver", c.noSafeManeuver());
             counters.put("separationLost", c.separationLost());
             counters.put("clearing", c.clearing());
+            counters.put("tracksLost", c.tracksLost());
             counters.put("trafficAdvisories", c.trafficAdvisories());
             counters.put("towerSuppressed", c.towerSuppressed());
             payload.put("counters", counters);

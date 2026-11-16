@@ -12,10 +12,14 @@ import com.watchyojet.model.Conflict;
  *
  * <p>Each aircraft is projected along a straight line at constant ground speed and track.
  * Vertically it holds its reported rate, or, when it has an assigned altitude, climbs or
- * descends at its type's rate and levels off there. A pair is in conflict when the time window in which it is inside the lateral
- * minimum overlaps the window in which it is inside the vertical minimum, within the lookahead.
- * Using both windows means a climbing aircraft is flagged only if it actually reaches the other
- * aircraft's level while they are laterally close.
+ * descends at its type's rate and levels off there. A pair is in conflict when the time window
+ * in which it is inside the lateral minimum overlaps the window in which it is inside the
+ * vertical minimum, within the lookahead. Using both windows means a climbing aircraft is
+ * flagged only if it actually reaches the other aircraft's level while they are laterally close.
+ *
+ * <p>When either aircraft is still turning or changing speed toward an assigned value, the
+ * straight line would skip the maneuver itself, so the pair is instead checked second by second
+ * along the path the aircraft will fly (see {@link PredictedPath}).
  */
 public class ConflictDetector {
 
@@ -38,6 +42,9 @@ public class ConflictDetector {
         double lateral = SeparationStandards.lateralMinimumNm(a1, a2) + lateralMarginNm;
         double vertical = SeparationStandards.VERTICAL_FT + verticalMarginFt;
         double horizon = SeparationStandards.lookaheadSeconds(a1, a2);
+        if (a1.isChangingCourse() || a2.isChangingCourse()) {
+            return evaluateAlongPaths(a1, a2, lateral, vertical, horizon);
+        }
 
         // Relative position (NM) and velocity (NM per second) on a local flat projection.
         double cosLat = Math.cos(Math.toRadians((a1.getLat() + a2.getLat()) / 2.0));
@@ -111,12 +118,44 @@ public class ConflictDetector {
                 closest, distance));
     }
 
+    /** Second-by-second check for pairs where either aircraft is turning or changing speed. */
+    private static Optional<Conflict> evaluateAlongPaths(Aircraft a1, Aircraft a2, double lateral,
+                                                         double vertical, double horizon) {
+        int seconds = (int) Math.ceil(horizon);
+        double cosLat = Math.cos(Math.toRadians((a1.getLat() + a2.getLat()) / 2.0));
+        PredictedPath p1 = PredictedPath.sample(a1, a1.getLat(), a1.getLon(), cosLat, seconds);
+        PredictedPath p2 = PredictedPath.sample(a2, a1.getLat(), a1.getLon(), cosLat, seconds);
+
+        double lateralSquared = lateral * lateral;
+        int closest = -1;
+        double closestSquared = Double.MAX_VALUE;
+        for (int t = 0; t <= seconds; t++) {
+            double dx = p2.x[t] - p1.x[t];
+            double dy = p2.y[t] - p1.y[t];
+            double squared = dx * dx + dy * dy;
+            boolean inside = squared < lateralSquared && Math.abs(verticalGap(a1, a2, t)) < vertical;
+            if (inside) {
+                if (squared < closestSquared) {
+                    closestSquared = squared;
+                    closest = t;
+                }
+            } else if (closest >= 0) {
+                break;   // report the first window in which both minima are infringed
+            }
+        }
+        if (closest < 0) return Optional.empty();
+
+        double distance = Math.sqrt(closestSquared);
+        double altitudeDiff = Math.abs(verticalGap(a1, a2, closest));
+        return Optional.of(new Conflict(a1, a2, classifySeverity(distance, altitudeDiff),
+                closest, distance));
+    }
+
     private static double verticalGap(Aircraft a1, Aircraft a2, double seconds) {
         return a2.altitudeAfter(seconds) - a1.altitudeAfter(seconds);
     }
 
-    // Prediction uses the assigned heading and speed when there is one, the way a conflict
-    // probe uses cleared intent rather than an aircraft caught halfway through a turn.
+    // Once any turn or speed change is complete, the intended values are the flown values.
     private static double velocityX(Aircraft a) {
         return a.getIntendedSpeed() * Math.sin(Math.toRadians(a.getIntendedHeading()));
     }

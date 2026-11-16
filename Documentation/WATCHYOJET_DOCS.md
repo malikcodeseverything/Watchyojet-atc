@@ -42,6 +42,10 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
    a 2 minute lookahead in that terminal area and 5 minutes elsewhere. The
    lookaheads are this project's choices: straight-line predictions age
    quickly in terminal airspace, where aircraft turn and change level often.
+   When either aircraft is still turning or changing speed toward an
+   assigned value, the pair is checked second by second along the path it
+   will fly (`PredictedPath`), following the same turn and speed rules as
+   `MovementEngine`, so a maneuver is never credited before it takes effect.
    Pairs involving a VFR aircraft (transponder code 1200) or a helicopter
    (ADS-B emitter category 8) are counted as traffic advisories and are not
    resolved. OpenSky does not report flight rules, so a US-registered
@@ -54,12 +58,16 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
    news, medical) mostly fly VFR at low level. An aircraft
    squawking 7500, 7600 or 7700 is treated as an emergency and is never the
    one asked to maneuver. Pairs with both aircraft inside tower airspace
-   (within 5 NM of PHL, PNE, TTN or ILG and below 2,500 ft) are counted
-   but not alerted, as are pairs in which either aircraft is below 1,000 ft
-   or slower than 40 kt (departing, landing, taxiing or hovering): near the
-   runways the tower separates traffic visually
-   and parallel approaches legally run much closer than radar minima, so
-   terminal radar systems inhibit conflict alerts there too. Once an alert
+   (within 5 NM and below 2,500 ft of one of 15 towered airports in the query
+   box: PHL, PNE, TTN, ILG, EWR, TEB, MMU, CDW, ACY, ABE, RDG, LNS, MTN, DOV
+   and WRI) are counted but not alerted: near the runways the tower separates
+   traffic visually and parallel approaches legally run much closer than
+   radar minima, so terminal radar systems inhibit conflict alerts there too.
+   Outside tower airspace, a pair in which either aircraft is below 1,000 ft
+   or slower than 40 kt (a traffic pattern, landing or hovering) is counted
+   as a traffic advisory rather than dropped: at airports without a tower,
+   IFR aircraft are handled one at a time by procedure rather than by radar
+   separation. Once an alert
    is active, it is held until the pair
    clears the minima by 0.5 NM or 200 ft, which keeps pairs hovering at the
    threshold from flickering between new and cleared.
@@ -68,6 +76,11 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
    aircraft. `ResolutionEngine` searches for altitude changes, then track
    changes, then speed reductions. Candidate checks use simplified aircraft
    performance, separation buffers, and changes already accepted in the cycle.
+   Each candidate is then probed with the same detector the trial uses: it
+   must separate the pair along the path flown, including the maneuver
+   itself, and must not create a conflict with other traffic. The resolver
+   therefore proposes maneuvers the trial will accept, instead of ones it
+   would reject.
 4. Each group is tested on its own trial copy of the tracks. A group is
    rejected if its maneuvers create a new predicted conflict. Rejecting one
    group does not affect the others.
@@ -78,6 +91,12 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
    - `ADVISE` (live OpenSky traffic): nothing is applied. Each alert carries
      its proposed instruction and whether it clears in simulation. An alert
      is reported cleared only when the observed tracks stop triggering it.
+     `AircraftManager` coasts an aircraft missing from a snapshot on its last
+     report for up to 45 seconds, as a radar display coasts a track over a
+     few missed scans. A coasted position is an extrapolation, so an alert
+     involving a coasting aircraft is held until a fresh report confirms
+     separation. If the track is dropped instead, the alert ends as a lost
+     track, not a clearance, because separation was never confirmed.
    - `SIMULATE` (scripted demo): accepted maneuvers are assigned to the demo
      tracks, and pairs they separate are reported cleared with the
      instruction that cleared them. `MovementEngine` then flies each
@@ -91,7 +110,8 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
 7. Every cycle produces a `CycleReport` with active alerts, cleared alerts,
    and counters (alerts, new alerts, groups, proposals, accepted and rejected
    groups, pairs cleared in trial, pairs without a safe maneuver, pairs
-   already inside the minima, held alerts and VFR traffic advisories). The
+   already inside the minima, held alerts, lost tracks, traffic advisories
+   and pairs in tower airspace). The
    counters are logged and shown above the conflict list. The engine hands
    the report to a `CycleListener`, so it has no dependency on the display.
 
@@ -119,7 +139,8 @@ The simulation's alert thresholds are a simplified version of the FAA
 radar minima, which also depend on surveillance mode, wake turbulence and
 the airspace class. Separation of VFR aircraft inside Class B airspace is
 not modeled. WatchyoJet uses public state vectors and straight-line
-trajectories. Observed traffic is assumed to hold its reported vertical rate,
-since OpenSky does not report assigned altitudes, and turns in progress are
-not predicted. The model does not account for wind, pilot response time or
+trajectories for observed traffic. Observed traffic is assumed to hold its
+reported vertical rate, since OpenSky does not report assigned altitudes, and
+turns already in progress on live tracks are not predicted. Assigned
+maneuvers are predicted along the path they would actually be flown. The model does not account for wind, pilot response time or
 controller and pilot coordination. [FAA radar separation](https://www.faa.gov/air_traffic/publications/atpubs/atc_html/chap5_section_5.html)

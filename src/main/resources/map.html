@@ -2040,7 +2040,7 @@ function renderAircraftDetail() {
   el.innerHTML = `
     <div class="aircraft-card">
       <div class="callsign">${escapeHtml(a.callsign)}<span class="type-tag">${escapeHtml(a.type)}</span></div>
-      <div class="route">${a.route}</div>
+      <div class="route">${a.route}${a.coast ? ' · coasting, missing from the latest snapshot' : ''}</div>
       <span class="status-badge ${a.status}">● ${a.status === 'cruise' ? 'LEVEL' : a.status.toUpperCase()}${a.groundRole?' · '+a.groundRole.toUpperCase():''}</span>
       <div class="telemetry-grid">
         <div class="telem"><div class="label">Altitude</div><div class="value">${a.alt.toLocaleString()}<span class="unit">ft</span></div></div>
@@ -2166,9 +2166,11 @@ function renderResolutionHistory() {
   countEl.textContent = resolutionHistory.length;
 
   list.innerHTML = [...resolutionHistory].reverse().map(e => {
-    const flStr = e.instruction
-      ? `<span class="res-action">${escapeHtml(e.instruction)}</span>`
-      : '<span class="res-action">observed tracks separated</span>';
+    const flStr = e.outcome === 'TRACK_LOST'
+      ? '<span class="res-action">track lost, separation not confirmed</span>'
+      : e.instruction
+        ? `<span class="res-action">${escapeHtml(e.instruction)}</span>`
+        : '<span class="res-action">observed tracks separated</span>';
     const d = new Date(e.ts);
     const hh = String(d.getHours()).padStart(2,'0');
     const mm = String(d.getMinutes()).padStart(2,'0');
@@ -2210,7 +2212,7 @@ function flushAircraftSnapshot() {
       vr: Math.round(d.vr || 0),
       status: (d.vr || 0) > 300 ? 'climb' : (d.vr || 0) < -300 ? 'descent' : 'cruise',
       route: feedSource === 'DEMO' ? 'Scripted demo' : 'OpenSky track',
-      squawk: d.sq || '----', onGround: false
+      squawk: d.sq || '----', onGround: false, coast: !!d.coast
     });
   }
   for (const id of feedAircraft.keys()) {
@@ -2255,10 +2257,14 @@ function renderConflictPanel() {
   }).join('');
 
   const resolvedHtml = Array.from(resolvedSet.values()).map(v => {
-    const resLine = v.instruction
-      ? `<div class="resolution-detail">↳ ${escapeHtml(v.instruction)}</div>`
-      : `<div class="resolution-detail">↳ Observed tracks no longer conflict</div>`;
-    return `<div class="conflict-item resolved-item"><div class="conflict-row"><span class="alert-tag resolved-tag">CLEARED</span>${escapeHtml(v.callsign1)} ↔ ${escapeHtml(v.callsign2)}</div>${resLine}</div>`;
+    const lost = v.outcome === 'TRACK_LOST';
+    const resLine = lost
+      ? `<div class="resolution-detail">↳ Track dropped from the feed; separation not confirmed</div>`
+      : v.instruction
+        ? `<div class="resolution-detail">↳ ${escapeHtml(v.instruction)}</div>`
+        : `<div class="resolution-detail">↳ Observed tracks no longer conflict</div>`;
+    const tag = lost ? 'TRACK LOST' : 'CLEARED';
+    return `<div class="conflict-item resolved-item"><div class="conflict-row"><span class="alert-tag resolved-tag">${tag}</span>${escapeHtml(v.callsign1)} ↔ ${escapeHtml(v.callsign2)}</div>${resLine}</div>`;
   }).join('');
 
   renderCycleStats();
@@ -2287,6 +2293,8 @@ function _adviceLine(conflict) {
         : `<div class="resolution-detail">Separation already lost · safety alert</div>`;
     case 'CLEARING':
       return `<div class="resolution-detail advice-ok">Separating · alert held until clear by a margin</div>`;
+    case 'AWAITING_REPORT':
+      return `<div class="resolution-detail">Track coasting · held until a fresh report confirms separation</div>`;
     case 'MANEUVER_IN_PROGRESS':
       return `<div class="resolution-detail">Maneuver in progress</div>`;
     default:
@@ -2304,8 +2312,9 @@ function renderCycleStats() {
   if (trafficMode === 'ADVISE') {
     el.textContent = `Advisory only · ${c.alerts} alerts · ${c.pairsClearedInTrial} clear in simulation · ` +
       `${c.rejectedGroups} rejected · ${c.noSafeManeuver} without a safe maneuver · ` +
-      `${c.separationLost} already lost · ${c.trafficAdvisories} VFR, likely VFR or helicopter traffic · ` +
-      `${c.towerSuppressed} low-level or in tower airspace`;
+      `${c.separationLost} already lost · ${c.tracksLost} tracks lost · ` +
+      `${c.trafficAdvisories} traffic advisories (VFR, helicopter, low or slow) · ` +
+      `${c.towerSuppressed} in tower airspace`;
   } else if (trafficMode === 'SIMULATE') {
     el.textContent = `Simulation · maneuvers applied to scripted tracks · ${c.alerts} alerts`;
   } else {
@@ -2323,9 +2332,9 @@ function applyCycleReport(report) {
   for (const conflict of report.active) resolvedSet.delete(conflict.key);
   for (const done of report.cleared) {
     resolvedSet.set(done.key, { ts, callsign1: done.callsign1, callsign2: done.callsign2,
-                                instruction: done.instruction || '' });
+                                outcome: done.outcome, instruction: done.instruction || '' });
     resolutionHistory.push({ ts, cs1: done.callsign1, cs2: done.callsign2,
-                             instruction: done.instruction || '' });
+                             outcome: done.outcome, instruction: done.instruction || '' });
     if (resolutionHistory.length > RES_HISTORY_MAX) resolutionHistory.shift();
   }
 

@@ -12,6 +12,7 @@ import com.watchyojet.engine.CycleListener;
 import com.watchyojet.engine.CycleMode;
 import com.watchyojet.manager.AircraftManager;
 import com.watchyojet.manager.OpenSkyFetcher;
+import com.watchyojet.model.Aircraft;
 import com.watchyojet.simulation.DemoScenario;
 import com.watchyojet.util.Logs;
 
@@ -90,12 +91,14 @@ public class Main {
                     if (demoRequested.get()) continue;
                     liveFetchFailed = !result.successful();
                     if (result.successful()) {
-                        manager.syncWithLiveData(result.aircraft());
+                        manager.syncWithLiveData(result.aircraft(), now);
+                        long coasting = manager.getAircrafts().stream().filter(Aircraft::isCoasting).count();
                         String credits = fetcher.creditsRemaining().isPresent()
                                 ? " OpenSky credits left today: " + fetcher.creditsRemaining().getAsLong() + "."
                                 : "";
                         LOG.log(INFO, "[SYSTEM] Airspace refreshed. Tracking "
-                                + manager.getAircrafts().size() + " live flights." + credits);
+                                + manager.getAircrafts().size() + " live flights"
+                                + (coasting > 0 ? " (" + coasting + " coasting)" : "") + "." + credits);
                         lastSuccessfulFetchTime = now;
                         if (fallbackDemoLoaded) engine = newEngine();
                         fallbackDemoLoaded = false;

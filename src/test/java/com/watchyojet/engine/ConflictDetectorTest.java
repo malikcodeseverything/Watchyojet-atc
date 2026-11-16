@@ -135,4 +135,41 @@ public class ConflictDetectorTest {
         assertTrue(new ConflictDetector().detectConflicts(List.of(low1, low2)).isEmpty());
         assertEquals(1, new ConflictDetector().detectConflicts(List.of(high1, high2)).size());
     }
+
+    @Test
+    void followsAnAssignedTurnInsteadOfJumpingToTheNewHeading() {
+        // Head-on at FL300, 9.2 NM apart. Pointing A north at once would pass 5.7 NM clear, but a
+        // standard-rate turn takes 30 s, during which the pair closes to about 3.9 NM.
+        Aircraft a = new Aircraft("A", 40.0, -75.5, 30_000, 450, 90, AircraftType.B737);
+        Aircraft b = new Aircraft("B", 40.0, -75.3, 30_000, 450, 270, AircraftType.B737);
+        ConflictDetector detector = new ConflictDetector();
+
+        Aircraft pointedNorth = a.copy();
+        pointedNorth.setHeading(0);
+        assertTrue(detector.evaluate(pointedNorth, b, 0, 0).isEmpty());
+
+        Aircraft turning = a.copy();
+        turning.assign(Double.NaN, 0, Double.NaN);
+        var conflict = detector.evaluate(turning, b, 0, 0);
+        assertTrue(conflict.isPresent());
+        assertEquals(3.9, conflict.get().getDCPA(), 0.1);
+    }
+
+    @Test
+    void followsAGradualSpeedReduction() {
+        // B closes on A from 6 NM behind at 100 kt in 5 NM airspace. Slowing B to 300 kt would
+        // remove the closure at once, but at 1 kt per second B keeps closing for 100 s and ends
+        // about 4.6 NM behind.
+        Aircraft a = new Aircraft("A", 40.0, -75.3, 30_000, 300, 90, AircraftType.B737);
+        Aircraft b = new Aircraft("B", 40.0, -75.4305, 30_000, 400, 90, AircraftType.B737);
+        ConflictDetector detector = new ConflictDetector();
+
+        Aircraft slowedAtOnce = b.copy();
+        slowedAtOnce.setSpeed(300);
+        assertTrue(detector.evaluate(a, slowedAtOnce, 0, 0).isEmpty());
+
+        Aircraft slowing = b.copy();
+        slowing.assign(Double.NaN, Double.NaN, 300);
+        assertTrue(detector.evaluate(a, slowing, 0, 0).isPresent());
+    }
 }

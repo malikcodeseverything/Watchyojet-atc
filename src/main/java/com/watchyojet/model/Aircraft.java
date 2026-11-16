@@ -21,6 +21,7 @@ public class Aircraft {
     private double verticalRate;  // ft/min, positive when climbing
     private String squawk;        // transponder code, or null when not reported
     private int emitterCategory;  // ADS-B emitter category from OpenSky, 0 when unknown
+    private boolean coasting;     // missing from the latest snapshot, position dead-reckoned
 
     // Assigned values the aircraft is moving toward (simulated traffic only), NaN when none.
     private double targetAltitude = Double.NaN;
@@ -52,6 +53,7 @@ public class Aircraft {
         copy.verticalRate = verticalRate;
         copy.squawk = squawk;
         copy.emitterCategory = emitterCategory;
+        copy.coasting = coasting;
         copy.targetAltitude = targetAltitude;
         copy.targetHeading = targetHeading;
         copy.targetSpeed = targetSpeed;
@@ -87,6 +89,14 @@ public class Aircraft {
     public int getEmitterCategory() { return emitterCategory; }
     public void setEmitterCategory(int emitterCategory) { this.emitterCategory = emitterCategory; }
 
+    /**
+     * True while the aircraft is missing from the latest snapshot. Its position is then
+     * dead-reckoned from the last report, the way a radar display coasts a track for a few
+     * scans before dropping it.
+     */
+    public boolean isCoasting() { return coasting; }
+    public void setCoasting(boolean coasting) { this.coasting = coasting; }
+
     public double getTargetAltitude() { return targetAltitude; }
     public void setTargetAltitude(double targetAltitude) { this.targetAltitude = targetAltitude; }
 
@@ -95,6 +105,26 @@ public class Aircraft {
 
     public double getTargetSpeed() { return targetSpeed; }
     public void setTargetSpeed(double targetSpeed) { this.targetSpeed = targetSpeed; }
+
+    /**
+     * Assigns a clearance. Each value is NaN when that dimension is unchanged. The aircraft then
+     * moves toward the assigned values at its type's climb rate, a standard-rate turn and a
+     * gradual speed change.
+     */
+    public void assign(double altitude, double heading, double speed) {
+        if (!Double.isNaN(altitude)) {
+            targetAltitude = altitude;
+            verticalRate = Math.signum(altitude - this.altitude) * type.getClimbRate();
+        }
+        if (!Double.isNaN(heading)) targetHeading = heading;
+        if (!Double.isNaN(speed)) targetSpeed = speed;
+    }
+
+    /** True while an assigned turn or speed change is still under way. */
+    public boolean isChangingCourse() {
+        return (!Double.isNaN(targetHeading) && Math.abs(((targetHeading - heading + 540) % 360) - 180) > 1e-6)
+                || (!Double.isNaN(targetSpeed) && Math.abs(targetSpeed - speed) > 1e-6);
+    }
 
     /** The heading the aircraft is flying or has been assigned, used for prediction. */
     public double getIntendedHeading() {

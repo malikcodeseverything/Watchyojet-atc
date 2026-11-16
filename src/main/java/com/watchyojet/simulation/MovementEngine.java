@@ -15,8 +15,8 @@ import com.watchyojet.model.Aircraft;
 public class MovementEngine {
 
     private static final double CYCLE_SECONDS = 2.0;
-    static final double STANDARD_RATE_DEG_PER_S = 3.0;
-    static final double SPEED_CHANGE_KT_PER_S = 1.0;
+    public static final double STANDARD_RATE_DEG_PER_S = 3.0;
+    public static final double SPEED_CHANGE_KT_PER_S = 1.0;
 
     public void updatePositions(List<Aircraft> aircraft) {
         for (Aircraft a : aircraft) {

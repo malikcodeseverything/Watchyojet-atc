@@ -26,6 +26,8 @@ public class ResolutionEngine {
     private static final double CRITICAL_DCPA     = 0.5;    // NM
     private static final double CRITICAL_ALT_DIFF = 200;    // ft
 
+    private final ConflictDetector detector = new ConflictDetector();
+
     // ── Cluster resolution (main entry point from ATCEngine) ──────────────────
 
     /**
@@ -133,6 +135,7 @@ public class ResolutionEngine {
             // candidate must itself provide ≥1000 ft from the conflicting aircraft's effective alt
             if (Math.abs(candidate - conflictAlt) < ALTITUDE_BUFFER) continue;
             if (!isAltFree(candidate, all, moving, committed))     continue;
+            if (!probeClears(moving, candidate, Double.NaN, Double.NaN, conflicting, all, committed)) continue;
             return new Resolution(moving, candidate);
         }
         return null;
@@ -170,6 +173,7 @@ public class ResolutionEngine {
                 }
             }
             if (!safe) continue;
+            if (!probeClears(moving, Double.NaN, candidate, Double.NaN, conflicting, all, committed)) continue;
             return Resolution.forHeading(moving, candidate);
         }
         return null;
@@ -200,6 +204,7 @@ public class ResolutionEngine {
             if (cpaSeparation(moving, getEffectiveHdg(moving, committed), reduced, neighbor, committed)
                     < SeparationStandards.lateralMinimumNm(moving, neighbor)) return null;
         }
+        if (!probeClears(moving, Double.NaN, Double.NaN, reduced, conflicting, all, committed)) return null;
         return Resolution.forSpeed(moving, reduced);
     }
 
@@ -230,6 +235,56 @@ public class ResolutionEngine {
                 return false;
         }
         return true;
+    }
+
+    // ── Trial probe along the flown path ──────────────────────────────────────
+
+    /**
+     * Probes a candidate clearance on the path the aircraft would actually fly, including the
+     * climb, turn or slowdown itself, with the same detector the engine uses to validate trials.
+     * The candidate must separate the pair, unless the pair is already inside the minima where no
+     * maneuver can undo that, and must not create a conflict with any other aircraft that
+     * separation applies to. Conflicts that already exist without the candidate do not count
+     * against it. Each value is NaN when that dimension is unchanged.
+     */
+    private boolean probeClears(Aircraft moving, double altitude, double heading, double speed,
+                                Aircraft conflicting, List<Aircraft> all,
+                                Map<String, double[]> committed) {
+        Aircraft current = effective(moving, committed);
+        Aircraft trial = current.copy();
+        trial.assign(altitude, heading, speed);
+
+        if (!SeparationStandards.insideMinimaNow(moving, conflicting)
+                && detector.evaluate(trial, effective(conflicting, committed), 0, 0).isPresent()) {
+            return false;
+        }
+        for (Aircraft other : all) {
+            if (other == moving || other == conflicting) continue;
+            if (!SeparationStandards.separationApplies(trial, other)) continue;
+            if (!canMeet(trial, other)) continue;
+            Aircraft otherNow = effective(other, committed);
+            if (detector.evaluate(trial, otherNow, 0, 0).isEmpty()) continue;
+            if (detector.evaluate(current, otherNow, 0, 0).isEmpty()) return false;
+        }
+        return true;
+    }
+
+    /** A cheap bound: false when the pair cannot close to the lateral minimum within the lookahead. */
+    private static boolean canMeet(Aircraft a, Aircraft b) {
+        double reach = (Math.max(a.getSpeed(), a.getIntendedSpeed())
+                + Math.max(b.getSpeed(), b.getIntendedSpeed()))
+                * SeparationStandards.lookaheadSeconds(a, b) / 3600.0;
+        return SeparationStandards.distanceNm(a.getLat(), a.getLon(), b.getLat(), b.getLon())
+                <= SeparationStandards.lateralMinimumNm(a, b) + reach;
+    }
+
+    /** The aircraft with this cycle's committed changes applied, on a copy when there are any. */
+    private static Aircraft effective(Aircraft aircraft, Map<String, double[]> committed) {
+        double[] s = committed.get(aircraft.getId());
+        if (s == null) return aircraft;
+        Aircraft copy = aircraft.copy();
+        copy.assign(s[0], s[1], s[2]);
+        return copy;
     }
 
     // ── CPA with heading override ─────────────────────────────────────────────

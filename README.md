@@ -88,14 +88,23 @@ approach-control airport the query box covers (PHL, EWR, ACY, ABE, BWI). It
 predicts with each aircraft's climb or descent rate, looks 2 minutes ahead in
 the terminal area and 5 minutes elsewhere, treats VFR traffic (code 1200) and
 helicopters as traffic advisories rather than conflicts, and never moves an aircraft
-squawking an emergency code. Pairs inside tower airspace (within 5 NM of PHL,
-PNE, TTN or ILG and below 2,500 ft), and pairs with an aircraft below 1,000 ft
-or slower than 40 kt, are left to the tower, the way terminal radar systems
-inhibit alerts near runways. Because OpenSky does not report flight rules,
-slow US-registered aircraft below 10,000 ft are estimated to be VFR and get
-traffic advisories. Each group of related conflicts gets
+squawking an emergency code. Pairs with both aircraft inside tower airspace
+(within 5 NM of one of 15 towered airports in the query box and below 2,500 ft)
+are left to the tower, the way terminal radar systems inhibit alerts near
+runways. Elsewhere, pairs with an aircraft below 1,000 ft or slower than 40 kt
+are reported as traffic advisories, not dropped. Because OpenSky does not
+report flight rules, slow US-registered aircraft below 10,000 ft are estimated
+to be VFR and get traffic advisories too. Each group of related conflicts gets
 its own trial: proposed maneuvers are tested on copies of the tracks, and a
 group is rejected only if its maneuvers create a new predicted conflict.
+Candidate maneuvers are probed along the path the aircraft would fly,
+including the turn, climb or slowdown itself.
+
+An aircraft missing from one OpenSky snapshot coasts on its last report for up
+to 45 seconds before it is dropped. A coasted position is only an estimate, so
+an alert involving a coasting aircraft stays up until a fresh report confirms
+separation. If the track is dropped instead, the alert is reported as a lost
+track, never as a clearance.
 
 Live traffic is advisory only. The engine never changes an OpenSky track. Each
 alert keeps its identity across refreshes and shows the proposed instruction,
@@ -108,7 +117,8 @@ or rejected, and how many pairs clear in simulation.
 WatchyoJet ATC is an educational simulation. In the demo, assigned maneuvers
 are flown at realistic rates: each type's climb rate, standard-rate turns of
 3 degrees per second, and gradual speed changes. Trials account for the time a
-maneuver takes, so a climb through an occupied level is rejected. It models
+maneuver takes, so a climb through an occupied level, or a turn that closes on
+traffic before it takes effect, is rejected. It models
 airborne conflicts and does not issue real
 clearances or transmit instructions to aircraft. See the
 [system documentation](Documentation/WATCHYOJET_DOCS.md) for the data flow,

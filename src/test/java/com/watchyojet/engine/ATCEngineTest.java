@@ -141,8 +141,8 @@ class ATCEngineTest {
     }
 
     @Test
-    void acceptsSafeGroupsEvenWhenAnotherGroupIsRejected() {
-        // Group X: A must descend to FL290, straight into C's path, so its proposal is rejected.
+    void choosesAManeuverThatAvoidsOtherTrafficOverOneTheTrialWouldReject() {
+        // Group X: descending A to FL290 would put it in C's path, so the resolver must look further.
         Aircraft a = new Aircraft("A", 40.00, -75.00, 30_000, 300, 0, AircraftType.B737);
         Aircraft b = new Aircraft("B", 40.20, -75.00, 30_500, 300, 180, AircraftType.B737);
         Aircraft c = new Aircraft("C", 40.40, -75.00, 29_000, 300, 180, AircraftType.B737);
@@ -153,10 +153,66 @@ class ATCEngineTest {
         CycleReport report = new ATCEngine().runCycle(List.of(a, b, c, d, e), CycleMode.ADVISE);
 
         assertEquals(2, report.counters().groups());
-        assertEquals(1, report.counters().acceptedGroups());
-        assertEquals(1, report.counters().rejectedGroups());
-        assertEquals(Advice.REJECTED_NEW_CONFLICT, adviceFor(report, "A", "B"));
+        assertEquals(2, report.counters().acceptedGroups());
+        assertEquals(0, report.counters().rejectedGroups());
+        assertEquals(Advice.CLEARS_IN_SIMULATION, adviceFor(report, "A", "B"));
         assertEquals(Advice.CLEARS_IN_SIMULATION, adviceFor(report, "D", "E"));
+        String instruction = report.active().stream()
+                .filter(alert -> alert.pairKey().equals("A:B")).findFirst().orElseThrow().instruction();
+        assertFalse(instruction.contains("FL290"), instruction);
+    }
+
+    @Test
+    void reportsALostTrackInsteadOfAClearance() {
+        Aircraft north = new Aircraft("N1", 40.00, -75.00, 30_000, 300, 0, AircraftType.B737);
+        Aircraft south = new Aircraft("S1", 40.20, -75.00, 30_500, 300, 180, AircraftType.B737);
+        var engine = new ATCEngine();
+        assertEquals(1, engine.runCycle(List.of(north, south), CycleMode.ADVISE, 0).active().size());
+
+        // S1 is no longer in the feed, so separation cannot be confirmed.
+        CycleReport report = engine.runCycle(List.of(north), CycleMode.ADVISE, 2_000);
+
+        assertTrue(report.active().isEmpty());
+        assertEquals(1, report.cleared().size());
+        assertEquals(CycleReport.Outcome.TRACK_LOST, report.cleared().get(0).outcome());
+        assertEquals(1, report.counters().tracksLost());
+        assertEquals(0, report.counters().clearedAlerts());
+    }
+
+    @Test
+    void neverClearsAnAlertOnACoastedPosition() {
+        Aircraft north = new Aircraft("N1", 40.00, -75.00, 30_000, 300, 0, AircraftType.B737);
+        Aircraft south = new Aircraft("S1", 40.20, -75.00, 30_500, 300, 180, AircraftType.B737);
+        List<Aircraft> tracks = List.of(north, south);
+        var engine = new ATCEngine();
+        engine.runCycle(tracks, CycleMode.ADVISE, 0);
+
+        // S1 missed a snapshot. Its extrapolated position looks separated, but nothing confirms it.
+        south.setCoasting(true);
+        south.setAltitude(33_000);
+        CycleReport coasting = engine.runCycle(tracks, CycleMode.ADVISE, 2_000);
+        assertTrue(coasting.cleared().isEmpty());
+        assertEquals(Advice.AWAITING_REPORT, adviceFor(coasting, "N1", "S1"));
+
+        // A fresh report confirms the climb, so the alert clears.
+        south.setCoasting(false);
+        CycleReport confirmed = engine.runCycle(tracks, CycleMode.ADVISE, 4_000);
+        assertTrue(confirmed.active().isEmpty());
+        assertEquals(CycleReport.Outcome.SEPARATED, confirmed.cleared().get(0).outcome());
+    }
+
+    @Test
+    void reportsLowTrafficAwayFromTowersAsTrafficRatherThanDroppingIt() {
+        // 0.6 NM apart, one below 1,000 ft, over Delaware farmland far from any tower.
+        Aircraft low = new Aircraft("LOW1", 39.30, -75.90, 900, 180, 90, AircraftType.B737);
+        Aircraft above = new Aircraft("ABV2", 39.31, -75.90, 1_400, 180, 90, AircraftType.B737);
+        assertFalse(SeparationStandards.inTowerZone(low));
+
+        CycleReport report = new ATCEngine().runCycle(List.of(low, above), CycleMode.ADVISE);
+
+        assertTrue(report.active().isEmpty());
+        assertEquals(1, report.counters().trafficAdvisories());
+        assertEquals(0, report.counters().towerSuppressed());
     }
 
     @Test
@@ -237,8 +293,8 @@ class ATCEngineTest {
     }
 
     @Test
-    void leavesLowOrSlowTracksToTheTower() {
-        // Departure and arrival 60 NM from PHL, 1 NM apart; one is still below 1,000 ft.
+    void leavesNewarkDeparturesAndArrivalsToTheTower() {
+        // Departure and arrival inside Newark tower airspace, 1 NM apart.
         Aircraft departing = new Aircraft("UAL1777", 40.70, -74.20, 800, 180, 0, AircraftType.B737);
         Aircraft arriving = new Aircraft("UAL1847", 40.7167, -74.20, 1_200, 150, 180, AircraftType.B737);
 

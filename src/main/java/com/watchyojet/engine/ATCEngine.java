@@ -19,6 +19,7 @@ import com.watchyojet.engine.CycleReport.ActiveAlert;
 import com.watchyojet.engine.CycleReport.Advice;
 import com.watchyojet.engine.CycleReport.ClearedAlert;
 import com.watchyojet.engine.CycleReport.Counters;
+import com.watchyojet.engine.CycleReport.Outcome;
 import com.watchyojet.model.Aircraft;
 import com.watchyojet.model.Conflict;
 import com.watchyojet.model.Resolution;
@@ -55,10 +56,10 @@ public class ATCEngine {
     private final Map<String, TrackedAlert> tracked = new LinkedHashMap<>();
 
     private record TrackedAlert(String id1, String id2, String callsign1, String callsign2,
-                                long firstSeenMillis, int cycles) {
+                                long firstSeenMillis, int cycles, Conflict last) {
         TrackedAlert seenAgain(Conflict conflict) {
             return new TrackedAlert(id1, id2, conflict.getA1().getCallsign(),
-                    conflict.getA2().getCallsign(), firstSeenMillis, cycles + 1);
+                    conflict.getA2().getCallsign(), firstSeenMillis, cycles + 1, conflict);
         }
     }
 
@@ -85,14 +86,14 @@ public class ATCEngine {
     CycleReport runCycle(List<Aircraft> aircraft, CycleMode mode, long now) {
         movement.updatePositions(aircraft);
 
-        // VFR traffic (squawk 1200) gets traffic information from ATC, not separation.
-        // Pairs inside tower airspace near an airport are the tower's to separate.
+        // Pairs inside tower airspace are the tower's to separate. VFR, helicopter and low or
+        // slow traffic gets traffic information from ATC, not separation. Both are counted.
         List<Conflict> conflicts = new ArrayList<>();
         int trafficAdvisories = 0;
         int towerSuppressed = 0;
         for (Conflict conflict : detector.detectConflicts(aircraft)) {
-            if (isTrafficAdvisory(conflict)) trafficAdvisories++;
-            else if (isTowerPair(conflict)) towerSuppressed++;
+            if (isTowerPair(conflict)) towerSuppressed++;
+            else if (isTrafficAdvisory(conflict)) trafficAdvisories++;
             else conflicts.add(conflict);
         }
         conflicts.sort(Comparator.comparing(Conflict::getSeverity)
@@ -106,18 +107,34 @@ public class ATCEngine {
         for (Aircraft track : aircraft) byId.put(track.getId(), track);
 
         // An alert that drops below the threshold is held until the pair clears it by a margin,
-        // so a pair hovering at the limit does not flicker between new and cleared.
+        // so a pair hovering at the limit does not flicker between new and cleared. When one of
+        // the tracks is gone, separation can no longer be confirmed, so the alert ends as a lost
+        // track rather than a clearance. While either aircraft is coasting, its position is an
+        // extrapolation, so the alert is held until a fresh report confirms the separation.
         List<ClearedAlert> cleared = new ArrayList<>();
         Map<String, Conflict> held = new LinkedHashMap<>();
+        Set<String> awaitingReport = new HashSet<>();
+        int tracksLost = 0;
         for (Map.Entry<String, TrackedAlert> entry : tracked.entrySet()) {
             if (byKey.containsKey(entry.getKey())) continue;
             TrackedAlert gone = entry.getValue();
-            Optional<Conflict> stillClose = holdingConflict(byId.get(gone.id1()), byId.get(gone.id2()));
-            if (stillClose.isPresent()) {
+            Aircraft first = byId.get(gone.id1());
+            Aircraft second = byId.get(gone.id2());
+            if (first == null || second == null) {
+                tracksLost++;
+                cleared.add(new ClearedAlert(entry.getKey(), gone.id1(), gone.id2(),
+                        gone.callsign1(), gone.callsign2(), Outcome.TRACK_LOST, ""));
+                continue;
+            }
+            Optional<Conflict> stillClose = holdingConflict(first, second);
+            if (first.isCoasting() || second.isCoasting()) {
+                held.put(entry.getKey(), stillClose.orElse(gone.last()));
+                awaitingReport.add(entry.getKey());
+            } else if (stillClose.isPresent()) {
                 held.put(entry.getKey(), stillClose.get());
             } else {
                 cleared.add(new ClearedAlert(entry.getKey(), gone.id1(), gone.id2(),
-                        gone.callsign1(), gone.callsign2(), ""));
+                        gone.callsign1(), gone.callsign2(), Outcome.SEPARATED, ""));
             }
         }
         tracked.keySet().removeIf(key -> !byKey.containsKey(key) && !held.containsKey(key));
@@ -130,7 +147,7 @@ public class ATCEngine {
                 newAlerts++;
                 tracked.put(entry.getKey(), new TrackedAlert(conflict.getA1().getId(),
                         conflict.getA2().getId(), conflict.getA1().getCallsign(),
-                        conflict.getA2().getCallsign(), now, 1));
+                        conflict.getA2().getCallsign(), now, 1, conflict));
                 logNewAlert(conflict);
             } else {
                 tracked.put(entry.getKey(), previous.seenAgain(conflict));
@@ -143,9 +160,9 @@ public class ATCEngine {
                 active.add(new ActiveAlert(entry.getKey(), entry.getValue(),
                         tracked.get(entry.getKey()).firstSeenMillis(), Advice.NOT_EVALUATED, ""));
             }
-            addHeld(active, held);
-            Counters counters = new Counters(active.size(), newAlerts, cleared.size(),
-                    0, 0, 0, 0, 0, 0, 0, held.size(), trafficAdvisories, towerSuppressed);
+            addHeld(active, held, awaitingReport);
+            Counters counters = new Counters(active.size(), newAlerts, cleared.size() - tracksLost,
+                    0, 0, 0, 0, 0, 0, 0, held.size(), tracksLost, trafficAdvisories, towerSuppressed);
             if (mode != CycleMode.DETECT_ONLY) logCycle(mode, counters);
             return publish(new CycleReport(mode, active, cleared, counters), aircraft);
         }
@@ -209,7 +226,10 @@ public class ATCEngine {
         if (simulate) {
             for (Map.Entry<String, double[]> change : accepted.entrySet()) {
                 for (Aircraft track : aircraft) {
-                    if (track.getId().equals(change.getKey())) assign(track, change.getValue());
+                    if (track.getId().equals(change.getKey())) {
+                        double[] values = change.getValue();
+                        track.assign(values[0], values[1], values[2]);
+                    }
                 }
                 resolutionCooldown.put(change.getKey(), now);
             }
@@ -232,6 +252,7 @@ public class ATCEngine {
             if (simulate && clearsInTrial) {
                 TrackedAlert alert = tracked.remove(key);
                 cleared.add(new ClearedAlert(key, id1, id2, alert.callsign1(), alert.callsign2(),
+                        Outcome.RESOLVED,
                         instructionFor(acceptedByAircraft, instructionByAircraft, id1, id2)));
                 continue;
             }
@@ -265,10 +286,10 @@ public class ATCEngine {
                     advice, instruction));
         }
 
-        addHeld(active, held);
-        Counters counters = new Counters(active.size(), newAlerts, cleared.size(), groups,
+        addHeld(active, held, awaitingReport);
+        Counters counters = new Counters(active.size(), newAlerts, cleared.size() - tracksLost, groups,
                 proposals, acceptedGroups, rejectedGroups, pairsClearedInTrial, noSafeManeuver,
-                separationLost, held.size(), trafficAdvisories, towerSuppressed);
+                separationLost, held.size(), tracksLost, trafficAdvisories, towerSuppressed);
         logCycle(mode, counters);
         return publish(new CycleReport(mode, active, cleared, counters), aircraft);
     }
@@ -289,18 +310,20 @@ public class ATCEngine {
                 continue;
             }
             Aircraft trial = track.copy();
-            assign(trial, changes);
+            trial.assign(changes[0], changes[1], changes[2]);
             trialAircraft.add(trial);
         }
 
         Set<String> originalPairs = new HashSet<>();
         for (Conflict conflict : originalConflicts) originalPairs.add(conflictKey(conflict));
-        // Compare like with like: VFR and tower-airspace pairs are excluded from the original
+        // Compare like with like: traffic and tower-airspace pairs are excluded from the original
         // list, so they are excluded here too. Otherwise every trial would look like it created
         // a new conflict.
         List<Conflict> predicted = new ArrayList<>();
         for (Conflict conflict : detector.detectConflicts(trialAircraft)) {
-            if (!isTrafficAdvisory(conflict) && !isTowerPair(conflict)) predicted.add(conflict);
+            if (SeparationStandards.separationApplies(conflict.getA1(), conflict.getA2())) {
+                predicted.add(conflict);
+            }
         }
         for (Conflict conflict : predicted) {
             if (!originalPairs.contains(conflictKey(conflict))) return Optional.empty();
@@ -326,17 +349,10 @@ public class ATCEngine {
         return copy;
     }
 
-    /**
-     * VFR traffic (squawk 1200) gets traffic information from ATC, not separation. Helicopters
-     * around Philadelphia (police, news, medical) mostly fly VFR at low level and are handled
-     * the same way.
-     */
+    /** See {@link SeparationStandards#trafficOnly(Aircraft)}. */
     private static boolean isTrafficAdvisory(Conflict conflict) {
-        return isTrafficOnly(conflict.getA1()) || isTrafficOnly(conflict.getA2());
-    }
-
-    private static boolean isTrafficOnly(Aircraft aircraft) {
-        return aircraft.isVfr() || aircraft.isRotorcraft() || SeparationStandards.likelyVfr(aircraft);
+        return SeparationStandards.trafficOnly(conflict.getA1())
+                || SeparationStandards.trafficOnly(conflict.getA2());
     }
 
     private static boolean isTowerPair(Conflict conflict) {
@@ -344,32 +360,19 @@ public class ATCEngine {
     }
 
     private Optional<Conflict> holdingConflict(Aircraft a1, Aircraft a2) {
-        if (a1 == null || a2 == null || isTrafficOnly(a1) || isTrafficOnly(a2)
-                || SeparationStandards.towerPair(a1, a2)) return Optional.empty();
+        if (!SeparationStandards.separationApplies(a1, a2)) return Optional.empty();
         return detector.evaluate(a1, a2, SeparationStandards.HOLD_LATERAL_MARGIN_NM,
                 SeparationStandards.HOLD_VERTICAL_MARGIN_FT);
     }
 
-    private void addHeld(List<ActiveAlert> active, Map<String, Conflict> held) {
+    private void addHeld(List<ActiveAlert> active, Map<String, Conflict> held,
+                         Set<String> awaitingReport) {
         for (Map.Entry<String, Conflict> entry : held.entrySet()) {
+            Advice advice = awaitingReport.contains(entry.getKey())
+                    ? Advice.AWAITING_REPORT : Advice.CLEARING;
             active.add(new ActiveAlert(entry.getKey(), entry.getValue(),
-                    tracked.get(entry.getKey()).firstSeenMillis(), Advice.CLEARING, ""));
+                    tracked.get(entry.getKey()).firstSeenMillis(), advice, ""));
         }
-    }
-
-    /**
-     * Assigns a maneuver. The aircraft then moves toward it over the following cycles at its
-     * type's climb rate, a standard-rate turn and a gradual speed change, and prediction uses
-     * the assigned values, so a trial accounts for the time the maneuver takes.
-     */
-    private static void assign(Aircraft aircraft, double[] state) {
-        if (!Double.isNaN(state[0])) {
-            aircraft.setTargetAltitude(state[0]);
-            aircraft.setVerticalRate(Math.signum(state[0] - aircraft.getAltitude())
-                    * aircraft.getType().getClimbRate());
-        }
-        if (!Double.isNaN(state[1])) aircraft.setTargetHeading(state[1]);
-        if (!Double.isNaN(state[2])) aircraft.setTargetSpeed(state[2]);
     }
 
     private static void logNewAlert(Conflict conflict) {
@@ -385,19 +388,21 @@ public class ATCEngine {
         double fromPhl = SeparationStandards.distanceNm(a.getLat(), a.getLon(),
                 SeparationStandards.PHL_LAT, SeparationStandards.PHL_LON);
         return String.format(java.util.Locale.ROOT,
-                "%-8s %,6.0f ft %+6.0f fpm %3.0f kt sq %-4s cat %-2d %4.1f NM from PHL%s",
+                "%-8s %,6.0f ft %+6.0f fpm %3.0f kt sq %-4s cat %-2d %4.1f NM from PHL%s%s",
                 a.getCallsign(), a.getAltitude(), a.getVerticalRate(), a.getSpeed(),
                 a.getSquawk() == null ? "----" : a.getSquawk(), a.getEmitterCategory(), fromPhl,
-                SeparationStandards.inTerminalArea(a) ? " terminal" : "");
+                SeparationStandards.inTerminalArea(a) ? " terminal" : "",
+                a.isCoasting() ? " coasting" : "");
     }
 
     private static void logCycle(CycleMode mode, Counters c) {
-        LOG.log(INFO, () -> String.format("[CYCLE] %s alerts=%d new=%d cleared=%d clearing=%d groups=%d"
-                        + " proposals=%d accepted=%d rejected=%d clearInTrial=%d noSafeManeuver=%d"
-                        + " separationLost=%d vfrTraffic=%d towerSuppressed=%d",
-                mode, c.alerts(), c.newAlerts(), c.clearedAlerts(), c.clearing(), c.groups(),
-                c.proposals(), c.acceptedGroups(), c.rejectedGroups(), c.pairsClearedInTrial(),
-                c.noSafeManeuver(), c.separationLost(), c.trafficAdvisories(), c.towerSuppressed()));
+        LOG.log(INFO, () -> String.format("[CYCLE] %s alerts=%d new=%d cleared=%d trackLost=%d clearing=%d"
+                        + " groups=%d proposals=%d accepted=%d rejected=%d clearInTrial=%d"
+                        + " noSafeManeuver=%d separationLost=%d traffic=%d towerSuppressed=%d",
+                mode, c.alerts(), c.newAlerts(), c.clearedAlerts(), c.tracksLost(), c.clearing(),
+                c.groups(), c.proposals(), c.acceptedGroups(), c.rejectedGroups(),
+                c.pairsClearedInTrial(), c.noSafeManeuver(), c.separationLost(),
+                c.trafficAdvisories(), c.towerSuppressed()));
     }
 
     // ── Conflict key ─────────────────────────────────────────────────────────
