@@ -40,7 +40,12 @@ wait. Explicit demo mode loads the scenario immediately and resets it every
    traffic advisories and are not resolved, since ATC gives VFR traffic
    information rather than separation outside Class B airspace. An aircraft
    squawking 7500, 7600 or 7700 is treated as an emergency and is never the
-   one asked to maneuver. Once an alert is active, it is held until the pair
+   one asked to maneuver. Pairs with both aircraft inside tower airspace
+   (within 5 NM of PHL, PNE, TTN or ILG and below 2,500 ft) are counted
+   but not alerted: near the runways the tower separates traffic visually
+   and parallel approaches legally run much closer than radar minima, so
+   terminal radar systems inhibit conflict alerts there too. Once an alert
+   is active, it is held until the pair
    clears the minima by 0.5 NM or 200 ft, which keeps pairs hovering at the
    threshold from flickering between new and cleared.
 3. `ATCEngine` tracks each alert by its aircraft pair, so an encounter keeps

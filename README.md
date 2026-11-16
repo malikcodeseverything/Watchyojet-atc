@@ -51,7 +51,9 @@ FL180, within 40 NM) and 5 NM elsewhere, with 1,000 ft vertically. It
 predicts with each aircraft's climb or descent rate, looks 2 minutes ahead in
 the terminal area and 5 minutes elsewhere, treats VFR traffic (code 1200) as
 traffic advisories rather than conflicts, and never moves an aircraft
-squawking an emergency code. Each group of related conflicts gets
+squawking an emergency code. Pairs inside tower airspace (within 5 NM of PHL,
+PNE, TTN or ILG and below 2,500 ft) are left to the tower, the way terminal
+radar systems inhibit alerts near runways. Each group of related conflicts gets
 its own trial: proposed maneuvers are tested on copies of the tracks, and a
 group is rejected only if its maneuvers create a new predicted conflict.
 

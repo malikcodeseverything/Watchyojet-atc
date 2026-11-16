@@ -211,6 +211,23 @@ class ATCEngineTest {
         assertTrue(report.active().get(0).instruction().startsWith("OTHER "));
     }
 
+    @Test
+    void leavesPairsInsideTowerAirspaceToTheTower() {
+        // Parallel arrivals 1 NM apart, 3 NM west of PHL.
+        Aircraft left = new Aircraft("LEFT", 39.8719, -75.30, 1_500, 140, 90, AircraftType.B737);
+        Aircraft right = new Aircraft("RIGHT", 39.8886, -75.30, 1_500, 140, 90, AircraftType.B737);
+
+        CycleReport low = new ATCEngine().runCycle(List.of(left, right), CycleMode.ADVISE);
+        assertTrue(low.active().isEmpty());
+        assertEquals(1, low.counters().towerSuppressed());
+
+        left.setAltitude(4_000);
+        right.setAltitude(4_000);
+        CycleReport high = new ATCEngine().runCycle(List.of(left, right), CycleMode.ADVISE);
+        assertEquals(1, high.active().size());
+        assertEquals(0, high.counters().towerSuppressed());
+    }
+
     private static Advice adviceFor(CycleReport report, String id1, String id2) {
         return report.active().stream()
                 .filter(alert -> alert.pairKey().equals(id1 + ":" + id2))

@@ -253,6 +253,7 @@ public class WYJAppController implements CycleListener {
             counters.put("separationLost", c.separationLost());
             counters.put("clearing", c.clearing());
             counters.put("trafficAdvisories", c.trafficAdvisories());
+            counters.put("towerSuppressed", c.towerSuppressed());
             payload.put("counters", counters);
             reportJson = JSON.writeValueAsString(payload);
         } catch (JsonProcessingException e) {

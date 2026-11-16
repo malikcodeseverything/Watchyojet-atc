@@ -66,10 +66,12 @@ public record CycleReport(CycleMode mode, List<ActiveAlert> active, List<Cleared
      * @param trafficAdvisories predicted proximity involving a VFR aircraft (squawk 1200). These
      *                          get traffic information, not separation, so they are counted but
      *                          not resolved.
+     * @param towerSuppressed   predicted proximity with both aircraft inside tower airspace near
+     *                          an airport, where radar alerts are suppressed.
      */
     public record Counters(int alerts, int newAlerts, int clearedAlerts, int groups,
                            int proposals, int acceptedGroups, int rejectedGroups,
                            int pairsClearedInTrial, int noSafeManeuver, int separationLost,
-                           int clearing, int trafficAdvisories) {
+                           int clearing, int trafficAdvisories, int towerSuppressed) {
     }
 }

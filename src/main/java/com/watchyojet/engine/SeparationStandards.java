@@ -1,5 +1,7 @@
 package com.watchyojet.engine;
 
+import java.util.List;
+
 import com.watchyojet.model.Aircraft;
 
 /**
@@ -31,7 +33,40 @@ public final class SeparationStandards {
     public static final double HOLD_LATERAL_MARGIN_NM = 0.5;
     public static final double HOLD_VERTICAL_MARGIN_FT = 200;
 
+    /**
+     * Airspace around a towered airport. Close to the runways the tower separates traffic
+     * visually and with runway procedures, and parallel approaches legally run much closer than
+     * radar minima, so radar conflict alerts would mostly be false. Terminal radar systems use
+     * alert inhibit areas for the same reason. The zone follows the typical size of tower
+     * airspace: about 5 NM out and up to 2,500 ft.
+     */
+    public record TowerZone(String airport, double lat, double lon) {
+    }
+
+    public static final List<TowerZone> TOWER_ZONES = List.of(
+            new TowerZone("PHL", 39.8719, -75.2411),
+            new TowerZone("PNE", 40.0819, -75.0106),
+            new TowerZone("TTN", 40.2767, -74.8135),
+            new TowerZone("ILG", 39.6787, -75.6065));
+
+    public static final double TOWER_ZONE_RADIUS_NM = 5;
+    public static final double TOWER_ZONE_CEILING_FT = 2_500;
+
     private SeparationStandards() {
+    }
+
+    public static boolean inTowerZone(Aircraft aircraft) {
+        if (aircraft.getAltitude() >= TOWER_ZONE_CEILING_FT) return false;
+        for (TowerZone zone : TOWER_ZONES) {
+            if (distanceNm(aircraft.getLat(), aircraft.getLon(), zone.lat(), zone.lon())
+                    <= TOWER_ZONE_RADIUS_NM) return true;
+        }
+        return false;
+    }
+
+    /** Radar alerts are suppressed only when both aircraft are inside tower airspace. */
+    public static boolean towerPair(Aircraft a, Aircraft b) {
+        return inTowerZone(a) && inTowerZone(b);
     }
 
     public static boolean inTerminalArea(Aircraft aircraft) {

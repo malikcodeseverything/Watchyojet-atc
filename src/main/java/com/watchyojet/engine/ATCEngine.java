@@ -81,10 +81,13 @@ public class ATCEngine {
         movement.updatePositions(aircraft);
 
         // VFR traffic (squawk 1200) gets traffic information from ATC, not separation.
+        // Pairs inside tower airspace near an airport are the tower's to separate.
         List<Conflict> conflicts = new ArrayList<>();
         int trafficAdvisories = 0;
+        int towerSuppressed = 0;
         for (Conflict conflict : detector.detectConflicts(aircraft)) {
             if (isTrafficAdvisory(conflict)) trafficAdvisories++;
+            else if (isTowerPair(conflict)) towerSuppressed++;
             else conflicts.add(conflict);
         }
         conflicts.sort(Comparator.comparing(Conflict::getSeverity)
@@ -137,7 +140,7 @@ public class ATCEngine {
             }
             addHeld(active, held);
             Counters counters = new Counters(active.size(), newAlerts, cleared.size(),
-                    0, 0, 0, 0, 0, 0, 0, held.size(), trafficAdvisories);
+                    0, 0, 0, 0, 0, 0, 0, held.size(), trafficAdvisories, towerSuppressed);
             if (mode != CycleMode.DETECT_ONLY) logCycle(mode, counters);
             return publish(new CycleReport(mode, active, cleared, counters), aircraft);
         }
@@ -260,7 +263,7 @@ public class ATCEngine {
         addHeld(active, held);
         Counters counters = new Counters(active.size(), newAlerts, cleared.size(), groups,
                 proposals, acceptedGroups, rejectedGroups, pairsClearedInTrial, noSafeManeuver,
-                separationLost, held.size(), trafficAdvisories);
+                separationLost, held.size(), trafficAdvisories, towerSuppressed);
         logCycle(mode, counters);
         return publish(new CycleReport(mode, active, cleared, counters), aircraft);
     }
@@ -287,11 +290,12 @@ public class ATCEngine {
 
         Set<String> originalPairs = new HashSet<>();
         for (Conflict conflict : originalConflicts) originalPairs.add(conflictKey(conflict));
-        // Compare like with like: VFR proximity is excluded from the original list, so it is
-        // excluded here too. Otherwise every trial would look like it created a new conflict.
+        // Compare like with like: VFR and tower-airspace pairs are excluded from the original
+        // list, so they are excluded here too. Otherwise every trial would look like it created
+        // a new conflict.
         List<Conflict> predicted = new ArrayList<>();
         for (Conflict conflict : detector.detectConflicts(trialAircraft)) {
-            if (!isTrafficAdvisory(conflict)) predicted.add(conflict);
+            if (!isTrafficAdvisory(conflict) && !isTowerPair(conflict)) predicted.add(conflict);
         }
         for (Conflict conflict : predicted) {
             if (!originalPairs.contains(conflictKey(conflict))) return Optional.empty();
@@ -322,8 +326,13 @@ public class ATCEngine {
         return conflict.getA1().isVfr() || conflict.getA2().isVfr();
     }
 
+    private static boolean isTowerPair(Conflict conflict) {
+        return SeparationStandards.towerPair(conflict.getA1(), conflict.getA2());
+    }
+
     private Optional<Conflict> holdingConflict(Aircraft a1, Aircraft a2) {
-        if (a1 == null || a2 == null || a1.isVfr() || a2.isVfr()) return Optional.empty();
+        if (a1 == null || a2 == null || a1.isVfr() || a2.isVfr()
+                || SeparationStandards.towerPair(a1, a2)) return Optional.empty();
         return detector.evaluate(a1, a2, SeparationStandards.HOLD_LATERAL_MARGIN_NM,
                 SeparationStandards.HOLD_VERTICAL_MARGIN_FT);
     }
@@ -354,10 +363,10 @@ public class ATCEngine {
     private static void logCycle(CycleMode mode, Counters c) {
         System.out.printf("[CYCLE] %s alerts=%d new=%d cleared=%d clearing=%d groups=%d"
                         + " proposals=%d accepted=%d rejected=%d clearInTrial=%d noSafeManeuver=%d"
-                        + " separationLost=%d vfrTraffic=%d%n",
+                        + " separationLost=%d vfrTraffic=%d towerSuppressed=%d%n",
                 mode, c.alerts(), c.newAlerts(), c.clearedAlerts(), c.clearing(), c.groups(),
                 c.proposals(), c.acceptedGroups(), c.rejectedGroups(), c.pairsClearedInTrial(),
-                c.noSafeManeuver(), c.separationLost(), c.trafficAdvisories());
+                c.noSafeManeuver(), c.separationLost(), c.trafficAdvisories(), c.towerSuppressed());
     }
 
     // ── Conflict key ─────────────────────────────────────────────────────────
