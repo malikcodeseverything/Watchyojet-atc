@@ -1,5 +1,6 @@
 package com.watchyojet;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.watchyojet.engine.ATCEngine;
@@ -9,7 +10,7 @@ import com.watchyojet.simulation.DemoScenario;
 
 public class Main {
 
-    public static final boolean DEMO_MODE = Boolean.getBoolean("watchyojet.demo");
+    public static final boolean START_IN_DEMO = Boolean.getBoolean("watchyojet.demo");
 
     private static final long API_COOLDOWN_MS   = 12_000;
     private static final long DEMO_RESET_MS     = 60_000; // reset scenario every 60 s
@@ -17,10 +18,10 @@ public class Main {
     private static final long MAX_STALE_MS      = 60_000;
 
     public static void main(String[] args) {
-        run(new AtomicBoolean(true), new AtomicBoolean());
+        run(new AtomicBoolean(true), new AtomicBoolean(START_IN_DEMO), new AtomicBoolean());
     }
 
-    public static void run(AtomicBoolean running, AtomicBoolean replayRequested) {
+    static void run(AtomicBoolean running, AtomicBoolean demoRequested, AtomicBoolean replayRequested) {
 
         AircraftManager manager = new AircraftManager();
         OpenSkyFetcher  fetcher = new OpenSkyFetcher();
@@ -28,6 +29,7 @@ public class Main {
         long lastApiFetchTime = -API_COOLDOWN_MS;
         long apiPollDelay = API_COOLDOWN_MS;
         boolean liveFetchFailed = false;
+        Boolean demoMode = null;
         long lastDemoResetTime = Long.MIN_VALUE;
         long lastSuccessfulFetchTime = Long.MIN_VALUE;
         String currentStatus = null;
@@ -35,16 +37,24 @@ public class Main {
         boolean fallbackDemoLoaded = false;
 
         System.out.println("Initializing WatchyoJet ATC simulation...");
-        if (DEMO_MODE) {
-            System.out.println("[DEMO] Running controlled scenario — 10 aircraft, 3 conflict pairs");
-            nominalStatus = "DEMO — deterministic offline traffic";
-            currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);
-        }
-
         while (running.get() && !Thread.currentThread().isInterrupted()) {
             long now = System.currentTimeMillis();
 
-            if (DEMO_MODE) {
+            boolean requestedMode = demoRequested.get();
+            if (demoMode == null || demoMode != requestedMode) {
+                demoMode = requestedMode;
+                manager.reset(List.of());
+                engine = new ATCEngine();
+                lastDemoResetTime = Long.MIN_VALUE;
+                lastSuccessfulFetchTime = Long.MIN_VALUE;
+                liveFetchFailed = !demoMode && now - lastApiFetchTime < apiPollDelay;
+                fallbackDemoLoaded = false;
+                nominalStatus = demoMode ? "DEMO — deterministic offline traffic"
+                        : "CONNECTING — waiting for OpenSky";
+                currentStatus = publishStatusIfChanged(currentStatus, nominalStatus);
+            }
+
+            if (demoMode) {
                 if (replayRequested.getAndSet(false) || lastDemoResetTime == Long.MIN_VALUE
                         || now - lastDemoResetTime >= DEMO_RESET_MS) {
                     manager.reset(DemoScenario.build());
@@ -64,6 +74,7 @@ public class Main {
                     now = System.currentTimeMillis();
                     lastApiFetchTime = now;
                     apiPollDelay = Math.max(API_COOLDOWN_MS, result.retryAfterMillis());
+                    if (demoRequested.get()) continue;
                     liveFetchFailed = !result.successful();
                     if (result.successful()) {
                         manager.syncWithLiveData(result.aircraft());
@@ -96,7 +107,7 @@ public class Main {
             }
 
             try {
-                boolean applyManeuvers = !DEMO_MODE || now - lastDemoResetTime >= DEMO_PREVIEW_MS;
+                boolean applyManeuvers = !demoMode || now - lastDemoResetTime >= DEMO_PREVIEW_MS;
                 engine.runCycle(manager.getAircrafts(), applyManeuvers);
                 if (currentStatus != null && currentStatus.startsWith("ERROR")
                         && nominalStatus != null) {

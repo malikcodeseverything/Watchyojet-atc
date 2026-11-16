@@ -27,9 +27,12 @@ maneuvers. Use **Simulation → Replay demo** to restart, or wait for the
 automatic one-minute reset. Demo traffic runs without an OpenSky account
 or a live feed.
 
-To try live traffic, run `mvn javafx:run`. The map labels OpenSky traffic,
-cached tracks, and the scripted fallback separately. Live coverage and request
-quotas depend on OpenSky.
+Live traffic is the default when you launch with `mvn javafx:run`. You can
+switch modes in the app under **Simulation → Live traffic** or **Simulation →
+Offline demo**. If OpenSky is temporarily unavailable, the app labels cached
+tracks and falls back to scripted traffic when the cache expires. It returns
+to OpenSky automatically when requests succeed again. Live coverage and
+request quotas depend on OpenSky.
 
 ## How it works
 

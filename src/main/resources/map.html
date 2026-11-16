@@ -2421,7 +2421,12 @@ function resetTrafficDisplay() {
 function setDataStatus(status) {
   const el = document.getElementById('dataStatusBadge');
   const mode = status.split(' ')[0];
-  if (mode === 'LIVE' || mode === 'STALE' || mode === 'DEMO') {
+  if (mode === 'CONNECTING') {
+    feedSource = null;
+    feedMode = null;
+    resetTrafficDisplay();
+    document.getElementById('feedLabel').textContent = 'Feed tracks';
+  } else if (mode === 'LIVE' || mode === 'STALE' || mode === 'DEMO') {
     const source = mode === 'DEMO' ? 'DEMO' : 'OPENSKY';
     if (source !== feedSource) {
       resetTrafficDisplay();
@@ -2432,7 +2437,7 @@ function setDataStatus(status) {
       mode === 'DEMO' ? 'Demo tracks' : mode === 'STALE' ? 'Cached tracks' : 'OpenSky tracks';
     _needsRedraw = true;
   }
-  el.textContent = {LIVE: 'OpenSky live', STALE: 'OpenSky cached', DEMO: 'Demo traffic', ERROR: 'Engine error'}[mode] ?? status;
+  el.textContent = {CONNECTING: 'Connecting', LIVE: 'OpenSky live', STALE: 'OpenSky cached', DEMO: 'Demo traffic', ERROR: 'Engine error'}[mode] ?? status;
   el.title = status;
   el.style.borderColor = {LIVE: 'var(--ok)', STALE: 'var(--warn)', ERROR: 'var(--danger)'}[mode] ?? 'var(--line)';
 }

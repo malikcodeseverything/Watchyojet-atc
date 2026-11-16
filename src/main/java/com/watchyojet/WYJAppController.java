@@ -7,6 +7,7 @@ import javafx.fxml.FXML;
 import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.RadioMenuItem;
 import javafx.scene.layout.VBox;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
@@ -44,12 +45,20 @@ public class WYJAppController {
     @FXML
     private MenuItem replayDemo;
 
+    @FXML
+    private RadioMenuItem liveTraffic;
+
+    @FXML
+    private RadioMenuItem offlineDemo;
+
     private WebEngine webEngine;
 
     @FXML
     public void initialize() {
         instance = this;
-        replayDemo.setDisable(!Main.DEMO_MODE);
+        offlineDemo.setSelected(Main.START_IN_DEMO);
+        liveTraffic.setSelected(!Main.START_IN_DEMO);
+        replayDemo.setDisable(!Main.START_IN_DEMO);
         webEngine = webView.getEngine();
 
         spawnMainThread.setOnFailed(event -> {
@@ -96,13 +105,14 @@ public class WYJAppController {
 
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final AtomicBoolean started = new AtomicBoolean(false);
+    private final AtomicBoolean demoRequested = new AtomicBoolean(Main.START_IN_DEMO);
     private final AtomicBoolean replayRequested = new AtomicBoolean();
     private volatile String currentDataStatus;
 
     Task<Void> spawnMainThread = new Task<>(){
         @Override
         protected Void call() {
-            Main.run(running, replayRequested);
+            Main.run(running, demoRequested, replayRequested);
             return null;
         }
     };
@@ -123,6 +133,21 @@ public class WYJAppController {
     public void handleClose() {
         Stage stage = (Stage) topContainer.getScene().getWindow();
         stage.close();
+    }
+
+    @FXML
+    public void selectLiveTraffic() {
+        liveTraffic.setSelected(true);
+        replayRequested.set(false);
+        demoRequested.set(false);
+        replayDemo.setDisable(true);
+    }
+
+    @FXML
+    public void selectOfflineDemo() {
+        offlineDemo.setSelected(true);
+        demoRequested.set(true);
+        replayDemo.setDisable(false);
     }
 
     @FXML
