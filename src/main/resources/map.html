@@ -1283,10 +1283,11 @@ function renderSidebar() {
   const q = (search.value || "").toLowerCase();
   const filtered = q ? items.filter(i => i.name.toLowerCase().includes(q) || String(i.meta).toLowerCase().includes(q)) : items;
 
+  // Names include live callsigns from OpenSky, so everything is escaped.
   list.innerHTML = filtered.map(i => `
-    <div class="item" data-key="${i.key}">
-      <span class="name">${i.name}</span>
-      <span class="meta">${i.meta}</span>
+    <div class="item" data-key="${escapeHtml(i.key)}">
+      <span class="name">${escapeHtml(i.name)}</span>
+      <span class="meta">${escapeHtml(i.meta)}</span>
     </div>
   `).join('');
   list.querySelectorAll('.item').forEach(el => {
